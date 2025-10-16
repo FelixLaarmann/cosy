@@ -6,9 +6,9 @@ from cosy.types import Constructor, Group, Literal, Type, Var
 
 class DAMGRepository:
     """
-    A repository for directed acyclic graphs,
+    A repository for directed acyclic multigraphs,
     following "An initial algebra approach to directed acyclic graphs" from Jeremy Gibbons.
-    The following algebraic laws are defined on DAGs (if we skip arguments,
+    The following algebraic laws are defined on DAMGs (if we skip arguments,
     the variables are only the term arguments and the literals that are independent of the term arguments):
 
     beside(x, beside(y,z)) = beside(beside(x,y),z)  (associativity of beside)
@@ -123,17 +123,29 @@ class DAMGRepository:
         self.dimension_lower_bound: int = dimension_lower_bound
         self.labels: set[Any] = labels
 
-    # TODO fix inner class with factory pattern
     class Dimension(Group):
+
+        def __init__(self, dimension_upper_bound: int, dimension_lower_bound: int = 1):
+            self.dimension_upper_bound: int = dimension_upper_bound
+            self.dimension_lower_bound: int = dimension_lower_bound
 
         name = "dimension"
 
         def __iter__(self):
             yield from range(self.dimension_lower_bound, self.dimension_upper_bound + 1)
 
+    def dimension(self):
+        return self.Dimension(self.dimension_upper_bound, self.dimension_lower_bound)
+
     class Dimension_Matrix(Group):
 
+        def __init__(self, dimension):
+            self.Dimension = dimension
+
         name = "dimension_matrix"
+
+        def __iter__(self):
+            raise NotImplementedError("Iteration over Dimension_Matrix is not (yet) supported.")
 
         def __contains__(self, item):
             return (isinstance(item, tuple)
@@ -148,21 +160,45 @@ class DAMGRepository:
                     all(sum(map(lambda x: x[1], l)) == sum(map(lambda x: x[0], r)) for (l,r) in zip(item, item[1:]))
                     )   # output of one parallel composition must match input of the next
 
+    def dimension_matrix(self):
+        return self.Dimension_Matrix(self.dimension)
+
     class Label(Group):
+        def __init__(self, label):
+            self.labels = label
+
         name = "labels"
 
         def __iter__(self):
             yield from self.labels
 
+    def label(self):
+        return self.Label(self.labels)
+
     class Label_Matrix(Group):
+        def __init__(self, label):
+            self.labels = label
+
         name = "label_matrix"
+
+        def __iter__(self):
+            raise NotImplementedError("Iteration over Label_Matrix is not (yet) supported.")
 
         def __contains__(self, item):
             return (isinstance(item, tuple) and
                     all(isinstance(t, tuple) and all(x in self.labels for x in t) for t in item))
 
+    def label_matrix(self):
+        return self.Label_Matrix(self.labels)
+
     class Swap_Matrix(Group):
+        def __init__(self, dimension):
+            self.Dimension = dimension
+
         name = "swap_matrix"
+
+        def __iter__(self):
+            raise NotImplementedError("Iteration over Swap_Matrix is not (yet) supported.")
 
         def __contains__(self, item):
             return (isinstance(item, tuple) and
@@ -187,6 +223,9 @@ class DAMGRepository:
                         for (l, r) in zip(item, item[1:])) # derived simplification law: before(besides(copy(m, edge()), swap(n + p, n, p)), besides(swap(m + p, m, p), copy(n, edge())))
                     )
 
+    def swap_matrix(self):
+        return self.Swap_Matrix(self.dimension)
+
     def specification(self):
         return {
             "edge": Constructor("graph",
@@ -197,11 +236,11 @@ class DAMGRepository:
                                 & Constructor("labels", Literal((((),),)))
                                 ),
             "vertex": DSL()
-            .parameter("m", self.Dimension())
-            .parameter("n", self.Dimension())
-            .parameter("d", self.Dimension_Matrix(), lambda v: [(((v["m"], v["n"]),),)])
-            .parameter("l", self.Label())
-            .parameter("lm", self.Label_Matrix(), lambda v: [((v["l"],),)])
+            .parameter("m", self.dimension())
+            .parameter("n", self.dimension())
+            .parameter("d", self.dimension_matrix(), lambda v: [(((v["m"], v["n"]),),)])
+            .parameter("l", self.label())
+            .parameter("lm", self.label_matrix(), lambda v: [((v["l"],),)])
             .suffix(Constructor("graph",
                                 Constructor("input", Var("m"))
                                 & Constructor("output", Var("n"))
@@ -211,24 +250,29 @@ class DAMGRepository:
                                 )
                     ),
 
-            # TODO: the following constraints are currently not implemented
-            # - swap law: before(swap(m + n, m, n), before(beside(x(n, p), y(m, q)), swap(p + q, p, q)))
-
             "before": DSL()
-            .parameter("d", self.Dimension_Matrix())
+            .parameter("d", self.dimension_matrix())
             .parameter_constraint(lambda v: len(v["d"]) > 1)  # abiding
-            .parameter("mc", self.Dimension_Matrix(), lambda v: [v["d"][0]])  # before is right associative
-            .parameter("cn", self.Dimension_Matrix(), lambda v: [v["d"][1:]])
-            .parameter("m", self.Dimension(), lambda v: [sum(x[0] for x in v["mc"])])
-            .parameter("c", self.Dimension(), lambda v: [sum(x[1] for x in v["mc"])])
-            .parameter("n", self.Dimension(), lambda v: [sum(x[0] for x in v["d"][-1])])
-            .parameter("s", self.Swap_Matrix())
-            .parameter_constraint(lambda v: len(v["s"]) > 1)  # abiding
-            .parameter("smc", self.Swap_Matrix(), lambda v: [v["s"][0]])
-            .parameter("scn", self.Swap_Matrix(), lambda v: [v["s"][1:]])
-            .parameter("l", self.Label_Matrix())
-            .parameter("lmc", self.Label_Matrix(), lambda v: [v["l"][0]])
-            .parameter("lcn", self.Label_Matrix(), lambda v: [v["l"][1:]])
+            .parameter("mc", self.dimension_matrix(), lambda v: [v["d"][0:1]])  # before is right associative
+            .parameter("cn", self.dimension_matrix(), lambda v: [v["d"][1:]])
+            .parameter("m", self.dimension(), lambda v: [sum(x[0] for x in v["mc"])])
+            .parameter("c", self.dimension(), lambda v: [sum(x[1] for x in v["mc"])])
+            .parameter("n", self.dimension(), lambda v: [sum(x[0] for x in v["d"][-1])])
+            .parameter("s", self.swap_matrix())
+            .parameter_constraint(lambda v: len(v["d"]) == len(v["s"]))  # consistency of dims and swaps
+            # .parameter_constraint(lambda v: len(v["s"]) > 1)  # abiding
+            .parameter("smc", self.swap_matrix(), lambda v: [v["s"][0:1]])
+            .parameter("scn", self.swap_matrix(), lambda v: [v["s"][1:]])
+            .parameter_constraint(lambda v: all((v["smc"][0][0][0] != v["cn"][0][1][0],
+                                                 v["smc"][0][0][1] != v["cn"][0][0][0],
+                                                 v["cn"][0][0][1] != v["scn"][1][0][0],
+                                                 v["cn"][0][1][1] != v["scn"][1][0][1]))
+            if all((len(v["smc"]) == 1, len(v["scn"]) > 1, len(v["cn"][0]) == 2)) else True)   # len(v["scn"]) > 1 ~~> len(v["cn"]) > 1
+            # swap law: before(swap(m + n, m, n), before(beside(x(n, p), y(m, q)), swap(p + q, p, q)))
+            .parameter("l", self.label_matrix())
+            .parameter_constraint(lambda v: len(v["d"]) == len(v["l"]))  # consistency of dims and labels
+            .parameter("lmc", self.label_matrix(), lambda v: [v["l"][0]])
+            .parameter("lcn", self.label_matrix(), lambda v: [v["l"][1:]])
             .argument("x", Constructor("graph",
                                 Constructor("input", Var("m"))
                                 & Constructor("output", Var("c"))
@@ -252,7 +296,63 @@ class DAMGRepository:
                                 & Constructor("swaps", Var("s"))
                                 & Constructor("labels", Var("l"))
                                 )
-                    )
+                    ),
+
+            """
+            TODO add the following constraints to beside:
+        - associativity of beside: beside(beside(x,y),z)
+        - abiding law: beside(before(m,n,p, w(m,n), x(n,p)), before(m',r,p', y(m',r), z(r,p')))
+
+        - enforce copy: beside(x, x)
+        - enforce copy: beside(x, beside(x,y))
+        - enforce copy: beside(copy(n, x), beside(copy(m, x), y))
+        - enforce copy: beside(x, copy(n, x))
+        - enforce copy: beside(copy(n, x), x)
+            """: (),
+
+            "beside": DSL()
+            .parameter("d", self.dimension_matrix())
+            .parameter_constraint(lambda v: len(v["d"]) > 1)  # abiding
+            .parameter("mc", self.dimension_matrix())
+            .parameter("cn", self.dimension_matrix())
+            .parameter("m", self.dimension())
+            .parameter("n", self.dimension())
+            .parameter("p", self.dimension())
+            .parameter("q", self.dimension())
+            .parameter("q", self.dimension())
+            .parameter("i", self.dimension(), lambda v: [v["m"] + v["p"]])
+            .parameter("o", self.swap_matrix(), lambda v: [v["n"] + v["q"]])
+            .parameter_constraint(lambda v: len(v["d"]) == len(v["s"]))  # consistency of dims and swaps
+            .parameter("smc", self.swap_matrix())
+            .parameter("scn", self.swap_matrix())
+            .parameter("l", self.label_matrix())
+            .parameter_constraint(lambda v: len(v["d"]) == len(v["l"]))  # consistency of dims and labels
+            .parameter("lmc", self.label_matrix())
+            .parameter("lcn", self.label_matrix())
+            .argument("x", Constructor("graph",
+                                Constructor("input", Var("m"))
+                                & Constructor("output", Var("n"))
+                                & Constructor("dims", Var("mc"))
+                                & Constructor("swaps", Var("smc"))
+                                & Constructor("labels", Var("lmc"))
+                                )
+                      )
+            .argument("xs", Constructor("graph",
+                                Constructor("input", Var("p"))
+                                & Constructor("output", Var("q"))
+                                & Constructor("dims", Var("cn"))
+                                & Constructor("swaps", Var("scn"))
+                                & Constructor("labels", Var("lcn"))
+                                )
+                      )
+            .suffix(Constructor("graph",
+                                Constructor("input", Var("i"))
+                                & Constructor("output", Var("o"))
+                                & Constructor("dims", Var("d"))
+                                & Constructor("swaps", Var("s"))
+                                & Constructor("labels", Var("l"))
+                                )
+                    ),
 
 
         }
