@@ -145,7 +145,7 @@ class DAMGRepository:
         name = "dimension_matrix"
 
         def __iter__(self):
-            raise NotImplementedError("Iteration over Dimension_Matrix is not (yet) supported.")
+            super().__iter__()
 
         def __contains__(self, item):
             return (isinstance(item, tuple)
@@ -155,7 +155,7 @@ class DAMGRepository:
                         all(isinstance(x, tuple) and
                             all((len(x) == 2, x[0] in self.Dimension(), x[1] in self.Dimension()))
                             for x in t)  # t is parallel composition of (input, output) pairs
-                        for t in item # item is sequential composition of parallel compositions
+                        for t in item  # item is sequential composition of parallel compositions
                     ) and
                     all(sum(map(lambda x: x[1], l)) == sum(map(lambda x: x[0], r)) for (l,r) in zip(item, item[1:]))
                     )   # output of one parallel composition must match input of the next
@@ -182,7 +182,7 @@ class DAMGRepository:
         name = "label_matrix"
 
         def __iter__(self):
-            raise NotImplementedError("Iteration over Label_Matrix is not (yet) supported.")
+            super().__iter__()
 
         def __contains__(self, item):
             return (isinstance(item, tuple) and
@@ -198,7 +198,7 @@ class DAMGRepository:
         name = "swap_matrix"
 
         def __iter__(self):
-            raise NotImplementedError("Iteration over Swap_Matrix is not (yet) supported.")
+            super().__iter__()
 
         def __contains__(self, item):
             return (isinstance(item, tuple) and
