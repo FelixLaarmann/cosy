@@ -10,7 +10,7 @@ from queue import PriorityQueue
 from types import FunctionType
 from typing import Any, Generic, TypeVar
 
-from cosy.core.tree import Tree
+from src.cosy.core.tree import Tree
 
 NT = TypeVar("NT", bound=Hashable)  # type of non-terminals
 T = TypeVar("T", bound=Hashable)  # type of terminals
@@ -47,6 +47,118 @@ class RHSRule(Generic[NT, T, G]):
     @property
     def literal_substitution(self):
         return {n.name: n.value for n in self.arguments if isinstance(n, ConstantArgument)}
+
+
+Path = tuple[int, ...]
+
+
+class Goal(Generic[NT, T, G]):
+    constructors: dict[Path, T]
+    subgoals: dict[Path, NonTerminalArgument[NT]]
+    refuted: dict[Path, Tree[T]]
+    constraints: dict[tuple[Path, ...], tuple[Callable[[dict[str, Any]], bool], ...]]
+    success: bool
+
+    def __init__(self, root: dict[Path, T], subgoals: dict[Path, NonTerminalArgument[NT]], refuted: dict[Path, Tree[T]],
+                 constraints: dict[tuple[Path, ...], tuple[Callable[[dict[str, Any]], bool], ...]], success = False):
+        self.constructors = root
+        self.subgoals = subgoals
+        self.refuted = refuted
+        self.constraints = constraints
+        self.success = success
+
+    @classmethod
+    def from_rhs_rule(self, rhs: RHSRule[NT, T, G]) -> Goal[NT, T, G]:
+        subgoals = {}
+        refuted = {}
+        named: tuple[Path, ...] = ()
+        for i, arg in enumerate(rhs.arguments):
+            if isinstance(arg, NonTerminalArgument):
+                subgoals[(i,)] = arg
+                if arg.name is not None:
+                    named += ((i,),)
+            elif isinstance(arg, ConstantArgument):
+                refuted[(i,)] = Tree(arg.value, ())
+            else:
+                msg = f"Argument {arg} is neither a NonTerminalArgument nor a ConstantArgument"
+                raise ValueError(msg)
+        root = {() : rhs.terminal}
+        if rhs.predicates:
+            constraints = {named: rhs.predicates} if named else {}
+        else:
+            constraints = {}
+        if not subgoals:
+            refuted[()] = Tree(rhs.terminal, tuple(refuted[p] for p in sorted(refuted.keys())))
+            return Goal(root, subgoals, refuted, constraints, success=True)
+        return Goal(root, subgoals, refuted, constraints)
+
+
+    def update(self, rhs: RHSRule[NT, T, G], position: Path) -> Goal[NT, T, G] | None:
+        """Update the goal by applying the given rule at the given position.
+        If the rule cannot be applied (because a constraint/predicate is violated) at the given position, return None."""
+        new_subgoals = self.subgoals.copy()
+        # don't pop, because position is unique and we need the NT-name for the constraints
+        #new_subgoals.pop(position)
+        new_refuted = self.refuted.copy()
+        named: tuple[Path, ...] = ()
+
+        isGround = True
+
+        children: tuple[Tree[T], ...] = ()
+
+        for i, arg in enumerate(rhs.arguments):
+            new_position = position + (i,)
+            if isinstance(arg, NonTerminalArgument):
+                isGround = False
+                new_subgoals[new_position] = arg
+                if arg.name is not None:
+                    named += (new_position,)
+            elif isinstance(arg, ConstantArgument):
+                new_refuted[new_position] = Tree(arg.value, ())
+                children += (Tree(arg.value, ()),)
+            else:
+                msg = f"Argument {arg} is neither a NonTerminalArgument nor a ConstantArgument"
+                raise ValueError(msg)
+
+        new_constructors = self.constructors.copy()
+        new_constructors[position] = rhs.terminal
+        new_constraints = self.constraints.copy()
+        if rhs.predicates:
+            if named:
+                new_constraints[named] = rhs.predicates
+        level = len(position)
+        if isGround:
+            new_refuted[position] = Tree(rhs.terminal, children)
+            #if all subgoals on a level are refutated, then the parent goal is refuted as well,
+            # if the constraints are satisfied. This can be checked bottom up, starting from the last refuted goal.
+            while level > 0:
+                subgoal_level_pos = [p for p in new_subgoals.keys() if len(p) == level]
+                refuted_level_pos = [p for p in new_refuted.keys() if len(p) == level]
+                if len(subgoal_level_pos) == len(refuted_level_pos) and all([k in refuted_level_pos for k in subgoal_level_pos]):
+                    preds = [ps for ps in new_constraints.keys() if len(ps[0]) == level]
+                    test = True
+                    for ps in preds:
+                        constraints = new_constraints[ps]
+                        args: tuple[Tree[T]] = tuple(new_refuted[p] for p in ps)
+                        substitution = {new_subgoals[p].name : arg for p, arg in zip(ps, args)}
+                        test = test and all([c(substitution) for c in constraints])
+                        if not test:
+                            break
+                    if not test:
+                        #Constraints are not satisfied. Backtracking is necessary.
+                        return None
+                    #sort the positions by their last element, which corresponds to the position in the arguments of the parent goal
+                    sorted_positions = sorted(refuted_level_pos, key=lambda p: p[-1])
+                    children = tuple(new_refuted[p] for p in sorted_positions)
+                    new_refuted[position[:-1]] = Tree(new_constructors[position[:-1]], children)
+                    level -= 1
+                else:
+                    break
+        new_goal = Goal(new_constructors, new_subgoals, new_refuted, new_constraints, success= level == 0)
+        return new_goal
+
+
+
 
 
 class SolutionSpace(Generic[NT, T, G]):
@@ -240,8 +352,11 @@ class SolutionSpace(Generic[NT, T, G]):
         if start not in self.nonterminals():
             return
 
+        # Terme, die für NTs abgeleitet, aber noch nicht verarbeitet wurden
         queues: dict[NT, PriorityQueue[Tree[T]]] = {n: PriorityQueue() for n in self.nonterminals()}
+        # memoization of already existing terms for each non-terminal
         existing_terms: dict[NT, set[Tree[T]]] = {n: set() for n in self.nonterminals()}
+        # Ordnet NTs den Regeln zu, in denen sie als Argumente vorkommen
         inverse_grammar: dict[NT, deque[tuple[NT, RHSRule[NT, T, G]]]] = {n: deque() for n in self.nonterminals()}
         all_results: set[Tree[T]] = set()
 
@@ -293,6 +408,147 @@ class SolutionSpace(Generic[NT, T, G]):
                                 queues[m].put(new_term)
             current_bucket_size += 1
         return
+
+    def resolution(
+            self,
+            start: NT,
+            variance_strategy_push: Callable[[deque[Goal], Iterable[Goal]], deque[Goal]],
+            variance_strategy_pop: Callable[[deque[Goal]], tuple[deque[Goal], Goal]],
+            goal_selection_strategy: Callable[[Goal], tuple[Path, NonTerminalArgument[NT]]],
+            max_count: int | None = None,
+    ) -> Iterable[Tree[T]]:
+
+        """
+        Enumerate terms implemented via SLD-Resolution.
+        The NT start is the request/ first goal.
+
+        It is important to note, that a solution space differs from a logic program as follows:
+        While the CLSP synthesizes a logic program of the following form:
+
+        NT(T(X_0, ..., X_n)) :- NT_0(X_0), ..., NT_n(X_n), P_1(X_0, ..., X_n), ..., P_m(X_0, ..., X_n).
+        NT(T()).
+        Start(X) :- NT(X).
+        Where NT, NT_0, ..., NT_n are non-terminals, T is a terminal, X_0, ..., X_n are variables and P_1, ..., P_m are
+        (black box) predicates.
+
+        The solution space contains rules of the following form:
+
+        NT ~> (arguments, predicates, terminal)
+
+        Where arguments is a tuple of Arguments, which can be either constant arguments (ConstantArgument)
+        or non-terminal arguments (NonTerminalArgument).
+        These arguments can be named, where the name corresponds to the variable in the logic program, or unnamed,
+        where the name is None. An unnamed argument still corresponds to NT_i(X_i) in the logic program,
+        but it cannot be used in the predicates and we need to choose a free variable name for it when we apply the rule.
+        The predicates are the same as in the logic program, but they are applied to the specific substitution of the
+        rule, which is given by the constant arguments and the non-terminals arguments that have a name.
+        The terminal is the terminal of the rule, which corresponds to T in the logic program.
+
+        The SLD-Resolution for solution spaces works as follows:
+        Initialize: We start with the initial goal, which is the unary conjunction with the NT start.
+
+        Selection: We select a non-terminal in the current goal.
+        (We apply our selection strategy here, which is currently left open, but could be e.g. leftmost selection or random selection.)
+
+        Unification: SolutionSpace doesn't require unification, as the heads of the rules are just non-terminals,
+        but we still need to select a rule which matches the current goal.
+        All rules with the current goal as head are applicable, and we need to also apply another selection strategy here,
+        which is currently left open, but could be e.g. random selection or breadth-first selection.
+        Variance in our SolutionSpace comes from multiple applicable rules for the same non-terminal.
+        In enumeration, we apply all applicable rules, but in e.g. sampling,
+        we only apply one of them, which leads to a single branch in the search tree.
+
+        Derivation: We replace the selected non-terminal in the current goal with the RHS of the selected rule.
+
+        Termination: If there are no more non-terminals (or NonTerminalArguments) in the current goal,
+        we have derived a terminal tree, which is a solution. If there are still non-terminals,
+        we continue with the selection step.
+        """
+
+        if start not in self.nonterminals():
+            return
+
+        all_results: set[Tree[T]] = set()
+
+        # Initialize
+
+        goals = [Goal.from_rhs_rule(rhs) for rhs in self._rules[start]]
+        # yield all solutions that are already derived in the initial goals
+        non_successful_goals = []
+        for goal in goals:
+            if goal.success:
+                new_term = goal.refuted[()]
+                if new_term not in all_results:
+                    if max_count is not None and len(all_results) >= max_count:
+                        return
+                    yield new_term
+                    all_results.add(new_term)
+            else:
+                non_successful_goals.append(goal)
+
+        variance: deque[Goal] = variance_strategy_push(deque(), non_successful_goals)
+
+        variance, current_goal = variance_strategy_pop(variance)
+
+        # TODO: memoization
+
+        # Selection, Unification, Derivation and Termination
+        while variance:
+            # Selection:
+            p, nt = goal_selection_strategy(current_goal)
+            # Unification
+            applicable_rules = self._rules[nt.origin]
+            # Derivation
+            for r in applicable_rules:
+                new_goal = current_goal.update(r, p)
+                if new_goal is not None:
+                    # Termination
+                    if new_goal.success:
+                        new_term = new_goal.refuted[()]
+                        if new_term not in all_results:
+                            if max_count is not None and len(all_results) >= max_count:
+                                return
+                            yield new_term
+                            all_results.add(new_term)
+                    else:
+                        variance = variance_strategy_push(variance, [new_goal])
+                        variance, current_goal = variance_strategy_pop(variance)
+        return
+
+    def prolog_style_resolution(self,
+            start: NT,
+            max_count: int | None = None,) -> Iterable[Tree[T]]:
+        """A simple implementation of SLD-Resolution with leftmost selection and depth-first search."""
+        def variance_strategy_push(queue: deque[Goal], new_goals: Iterable[Goal]) -> deque[Goal]:
+            queue.extendleft(new_goals) # depth-first search
+            return queue
+
+        def variance_strategy_pop(queue: deque[Goal]) -> tuple[deque[Goal], Goal]:
+            return queue, queue.popleft() # depth-first search
+
+        def goal_selection_strategy(goal: Goal) -> tuple[Path, NonTerminalArgument[NT]]:
+            return min(goal.subgoals.items(), key=lambda item: item[0]) # leftmost selection
+
+        return self.resolution(start, variance_strategy_push, variance_strategy_pop, goal_selection_strategy, max_count)
+
+
+
+    def depth_first_resolution(self,
+            start: NT,
+            max_count: int | None = None,) -> Iterable[Tree[T]]:
+        """A simple implementation of SLD-Resolution with leftmost selection and breadth-first search."""
+        def variance_strategy_push(queue: deque[Goal], new_goals: Iterable[Goal]) -> deque[Goal]:
+            queue.extend(new_goals) # breadth-first search
+            return queue
+
+        def variance_strategy_pop(queue: deque[Goal]) -> tuple[deque[Goal], Goal]:
+            return queue, queue.popleft() # breadth-first search
+
+        def goal_selection_strategy(goal: Goal) -> tuple[Path, NonTerminalArgument[NT]]:
+            return min(goal.subgoals.items(), key=lambda item: item[0]) # leftmost selection
+
+        return self.resolution(start, variance_strategy_push, variance_strategy_pop, goal_selection_strategy, max_count)
+
 
     def contains_tree(self, start: NT, tree: Tree[T], interpretation: dict[T, Any] | None = None) -> bool:
         """Check if the solution space contains a given `tree` derivable from `start`."""
