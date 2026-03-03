@@ -97,8 +97,6 @@ class Goal(Generic[NT, T, G]):
         """Update the goal by applying the given rule at the given position.
         If the rule cannot be applied (because a constraint/predicate is violated) at the given position, return None."""
         new_subgoals = self.subgoals.copy()
-        # don't pop, because position is unique and we need the NT-name for the constraints
-        #new_subgoals.pop(position)
         new_refuted = self.refuted.copy()
         named: tuple[Path, ...] = ()
 
@@ -129,12 +127,13 @@ class Goal(Generic[NT, T, G]):
         level = len(position)
         if isGround:
             new_refuted[position] = Tree(rhs.terminal, children)
+            new_subgoals.pop(position)
             #if all subgoals on a level are refutated, then the parent goal is refuted as well,
             # if the constraints are satisfied. This can be checked bottom up, starting from the last refuted goal.
             while level > 0:
                 subgoal_level_pos = [p for p in new_subgoals.keys() if len(p) == level]
                 refuted_level_pos = [p for p in new_refuted.keys() if len(p) == level]
-                if len(subgoal_level_pos) == len(refuted_level_pos) and all([k in refuted_level_pos for k in subgoal_level_pos]):
+                if not subgoal_level_pos:
                     preds = [ps for ps in new_constraints.keys() if len(ps[0]) == level]
                     test = True
                     for ps in preds:
@@ -151,6 +150,11 @@ class Goal(Generic[NT, T, G]):
                     sorted_positions = sorted(refuted_level_pos, key=lambda p: p[-1])
                     children = tuple(new_refuted[p] for p in sorted_positions)
                     new_refuted[position[:-1]] = Tree(new_constructors[position[:-1]], children)
+                    for p in refuted_level_pos:
+                        new_refuted.pop(p)
+                    if position[:-1] and new_subgoals:
+                        new_subgoals.pop(position[:-1])
+                    position = position[:-1]
                     level -= 1
                 else:
                     break
@@ -479,26 +483,28 @@ class SolutionSpace(Generic[NT, T, G]):
             if goal.success:
                 new_term = goal.refuted[()]
                 if new_term not in all_results:
-                    if max_count is not None and len(all_results) >= max_count:
-                        return
                     yield new_term
                     all_results.add(new_term)
+                    if max_count is not None and len(all_results) >= max_count:
+                        return
             else:
                 non_successful_goals.append(goal)
-
+        #non_successful_goals.reverse()
         variance: deque[Goal] = variance_strategy_push(deque(), non_successful_goals)
 
-        variance, current_goal = variance_strategy_pop(variance)
+        #variance, current_goal = variance_strategy_pop(variance)
 
         # TODO: memoization
 
         # Selection, Unification, Derivation and Termination
         while variance:
+            variance, current_goal = variance_strategy_pop(variance)
             # Selection:
             p, nt = goal_selection_strategy(current_goal)
             # Unification
             applicable_rules = self._rules[nt.origin]
             # Derivation
+            new_goals: list[Goal] = []
             for r in applicable_rules:
                 new_goal = current_goal.update(r, p)
                 if new_goal is not None:
@@ -506,13 +512,13 @@ class SolutionSpace(Generic[NT, T, G]):
                     if new_goal.success:
                         new_term = new_goal.refuted[()]
                         if new_term not in all_results:
-                            if max_count is not None and len(all_results) >= max_count:
-                                return
                             yield new_term
                             all_results.add(new_term)
+                            if max_count is not None and len(all_results) >= max_count:
+                                return
                     else:
-                        variance = variance_strategy_push(variance, [new_goal])
-                        variance, current_goal = variance_strategy_pop(variance)
+                        new_goals.append(new_goal)
+            variance = variance_strategy_push(variance, new_goals)
         return
 
     def prolog_style_resolution(self,
@@ -520,34 +526,39 @@ class SolutionSpace(Generic[NT, T, G]):
             max_count: int | None = None,) -> Iterable[Tree[T]]:
         """A simple implementation of SLD-Resolution with leftmost selection and depth-first search."""
         def variance_strategy_push(queue: deque[Goal], new_goals: Iterable[Goal]) -> deque[Goal]:
-            queue.extendleft(new_goals) # depth-first search
+            sorted(new_goals, key=lambda g: len(g.subgoals))  # sort by number of subgoals
+            queue.extendleft(new_goals) # depth-first search <~> LIFO
             return queue
 
         def variance_strategy_pop(queue: deque[Goal]) -> tuple[deque[Goal], Goal]:
-            return queue, queue.popleft() # depth-first search
+            return queue, queue.popleft() # depth-first search <~> LIFO
 
         def goal_selection_strategy(goal: Goal) -> tuple[Path, NonTerminalArgument[NT]]:
-            return min(goal.subgoals.items(), key=lambda item: item[0]) # leftmost selection
+            max_len = max(len(p) for p in goal.subgoals.keys())
+            filtered = filter(lambda x: len(x[0]) == max_len, goal.subgoals.items())
+            return min(filtered, key=lambda item: item[0][-1]) # leftmost selection, assuming new subgoals (deeper positions) are added "to the left" of the old ones
 
         return self.resolution(start, variance_strategy_push, variance_strategy_pop, goal_selection_strategy, max_count)
 
-
-
-    def depth_first_resolution(self,
+    def breadth_first_resolution(self,
             start: NT,
             max_count: int | None = None,) -> Iterable[Tree[T]]:
-        """A simple implementation of SLD-Resolution with leftmost selection and breadth-first search."""
+        """A simple implementation of SLD-Resolution with leftmost selection and depth-first search."""
         def variance_strategy_push(queue: deque[Goal], new_goals: Iterable[Goal]) -> deque[Goal]:
-            queue.extend(new_goals) # breadth-first search
+            sorted(new_goals, key=lambda g: len(g.subgoals))  # sort by number of subgoals
+            queue.extend(new_goals) # breadth-first search <~> FIFO
             return queue
 
         def variance_strategy_pop(queue: deque[Goal]) -> tuple[deque[Goal], Goal]:
-            return queue, queue.popleft() # breadth-first search
+            return queue, queue.popleft() # breadth-first search <~> FIFO
 
         def goal_selection_strategy(goal: Goal) -> tuple[Path, NonTerminalArgument[NT]]:
-            return min(goal.subgoals.items(), key=lambda item: item[0]) # leftmost selection
+            max_len = max(len(p) for p in goal.subgoals.keys())
+            filtered = filter(lambda x: len(x[0]) == max_len, goal.subgoals.items())
+            return min(filtered, key=lambda item: item[0][-1]) # leftmost selection, assuming new subgoals (deeper positions) are added "to the left" of the old ones
 
         return self.resolution(start, variance_strategy_push, variance_strategy_pop, goal_selection_strategy, max_count)
+
 
 
     def contains_tree(self, start: NT, tree: Tree[T], interpretation: dict[T, Any] | None = None) -> bool:
