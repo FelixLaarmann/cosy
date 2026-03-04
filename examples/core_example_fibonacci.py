@@ -45,7 +45,7 @@ def fib_next(_z: int, _y: int, _x: int, f1: int, f2: int) -> int:
 
 def main():
     # range of relevant indices for Fibonacci numbers
-    bound = 5
+    bound = 25
 
     named_components_with_specifications = [
         (  #
@@ -91,7 +91,7 @@ def main():
     print(f"SolutionSpace construction took {end_time - start_time:.5f} seconds.")
 
     start_time = time.time()
-    terms = solution_space.enumerate_trees(target, max_count=100)
+    terms = solution_space.breadth_first_resolution(target, max_count=100)
     end_time = time.time()
 
     print(f"Term-Generator construction took {end_time - start_time:.5f} seconds.")
@@ -103,7 +103,7 @@ def main():
         i += 1
     end_time = time.time()
     print(f"Enumeration and printing of {i} terms took {end_time - start_time:.2f} seconds.")
-
+    """
     solution_space = SolutionSpace()
     width = 20
     solution_space.add_rule("Tree0", "t0", (NonTerminalArgument(None, "Tree1"),), ())
@@ -114,7 +114,7 @@ def main():
     solution_space.add_rule("Tree4", "t4_r", (), ())
 
     start_time = time.time()
-    terms = solution_space.sampling("Tree0", max_count=1)
+    terms = solution_space.depth_first_resolution("Tree0", max_count=10)
     end_time = time.time()
 
     print(f"Term-Generator construction took {end_time - start_time:.5f} seconds.")
@@ -126,7 +126,7 @@ def main():
         i += 1
     end_time = time.time()
     print(f"Enumeration and printing of {i} terms took {end_time - start_time:.2f} seconds.")
-
+    """
 if __name__ == "__main__":
     main()
 

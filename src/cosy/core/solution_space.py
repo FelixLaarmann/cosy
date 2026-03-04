@@ -95,13 +95,13 @@ class Goal(Generic[NT, T, G]):
         return Goal(root, subgoals, refuted, constraints)
 
 
-    def update(self, rhs: RHSRule[NT, T, G], position: Path, existing_terms: dict[NT, set[Tree[T]]]) -> tuple[list[Goal[NT, T, G]] | None, dict[NT, set[Tree[T]]]]:
+    def update(self, rhs: RHSRule[NT, T, G], position: Path, existing_terms: dict[NT, set[Tree[T]]]) -> Iterable[Goal[NT, T, G]]:
         """Update the goal by applying the given rule at the given position.
         If the rule cannot be applied (because a constraint/predicate is violated) at the given position, return None."""
         new_subgoals = self.subgoals.copy()
         new_refuted = self.refuted.copy()
         named: tuple[Path, ...] = ()
-        new_existing_terms = existing_terms.copy()
+        #new_existing_terms = existing_terms.copy()
 
         isGround = True
 
@@ -128,11 +128,11 @@ class Goal(Generic[NT, T, G]):
             if named:
                 new_constraints[named] = rhs.predicates
         level = len(position)
-        result: list[Goal[NT, T, G]] = []
+        #result: set[Goal[NT, T, G]] = set()
         if isGround:  # is triggered when the rule has only constant arguments, and therefore depends on the rule
             new_refuted[position] = Tree(rhs.terminal, children)
             nt = new_subgoals.pop(position)
-            new_existing_terms.setdefault(nt.origin, set()).add(new_refuted[position])
+            existing_terms.setdefault(nt.origin, set()).add(new_refuted[position])
             #if all subgoals on a level are refutated, then the parent goal is refuted as well,
             # if the constraints are satisfied. This can be checked bottom up, starting from the last refuted goal.
             while level > 0:
@@ -150,7 +150,8 @@ class Goal(Generic[NT, T, G]):
                             break
                     if not test:
                         #Constraints are not satisfied. Backtracking is necessary.
-                        return None, new_existing_terms
+                        #yield None
+                        return
                     #sort the positions by their last element, which corresponds to the position in the arguments of the parent goal
                     sorted_positions = sorted(refuted_level_pos, key=lambda p: p[-1])
                     children = tuple(new_refuted[p] for p in sorted_positions)
@@ -159,12 +160,13 @@ class Goal(Generic[NT, T, G]):
                         new_refuted.pop(p)
                     if position[:-1] in new_subgoals:
                         nt = new_subgoals.pop(position[:-1])
-                        new_existing_terms.setdefault(nt.origin, set()).add(new_refuted[position[:-1]])
+                        existing_terms.setdefault(nt.origin, set()).add(new_refuted[position[:-1]])
                     position = position[:-1]
                     level -= 1
                 else:
                     break
-            result.append(Goal(new_constructors, new_subgoals, new_refuted, new_constraints, success=level == 0))
+            #result.add(Goal(new_constructors, new_subgoals, new_refuted, new_constraints, success=level == 0))
+            yield Goal(new_constructors, new_subgoals, new_refuted, new_constraints, success=level == 0)
         else:
             # filter for paths to leave position subgoals
             def isPrefixOf(p: Path, q: Path) -> bool:
@@ -173,10 +175,11 @@ class Goal(Generic[NT, T, G]):
                 return p == q[:len(p)]
             leaves = {p for p in new_subgoals.keys() if all([not isPrefixOf(p, q) for q in new_subgoals.keys() if p != q])}
             # filter for subgoals, that can be refuted by existing terms
-            ref_pos = [[(p, t) for t in new_existing_terms[new_subgoals[p].origin]] for p in leaves if new_subgoals[p].origin in new_existing_terms]
+            ref_pos = [[(p, t) for t in existing_terms[new_subgoals[p].origin]] for p in leaves if new_subgoals[p].origin in existing_terms]
 
             prod = product(*ref_pos)
-            for combination in prod:
+            test = list(prod)
+            for combination in test:
                 new_subgoals_copy = new_subgoals.copy()
                 new_refuted_copy = new_refuted.copy()
                 for p, t in combination:
@@ -207,14 +210,15 @@ class Goal(Generic[NT, T, G]):
                                 new_refuted_copy.pop(x)
                             if p[:-1] in new_subgoals_copy:
                                 nt = new_subgoals_copy.pop(p[:-1])
-                                new_existing_terms.setdefault(nt.origin, set()).add(new_refuted_copy[p[:-1]])
+                                existing_terms.setdefault(nt.origin, set()).add(new_refuted_copy[p[:-1]])
                             p = p[:-1]
                             level -= 1
                         else:
                             break
-                result.append(Goal(new_constructors, new_subgoals_copy, new_refuted_copy, new_constraints, success=level == 0))
-
-        return result, new_existing_terms
+                #result.add(Goal(new_constructors, new_subgoals_copy, new_refuted_copy, new_constraints, success=level == 0))
+                yield Goal(new_constructors, new_subgoals_copy, new_refuted_copy, new_constraints, success=level == 0)
+        #return result
+        return
 
 
 
@@ -561,7 +565,7 @@ class SolutionSpace(Generic[NT, T, G]):
             # Derivation
             new_goals: list[Goal] = []
             for r in applicable_rules:
-                derived_goals, memoization = current_goal.update(r, p, memoization)
+                derived_goals = current_goal.update(r, p, memoization)
                 for new_goal in derived_goals:
                     if new_goal is not None:
                         # Termination
@@ -614,27 +618,6 @@ class SolutionSpace(Generic[NT, T, G]):
             return min(filtered, key=lambda item: item[0][-1]) # leftmost selection, assuming new subgoals (deeper positions) are added "to the left" of the old ones
 
         return self.resolution(start, variance_strategy_push, variance_strategy_pop, goal_selection_strategy, max_count)
-
-    def sampling(self,
-            start: NT,
-            max_count: int | None = None,) -> Iterable[Tree[T]]:
-        """A simple implementation of SLD-Resolution with leftmost goal selection and breadth-first search in the SLD-Derivation-Tree."""
-        def variance_strategy_push(queue: deque[Goal], new_goals: Iterable[Goal]) -> deque[Goal]:
-            goal = random.choice(list(new_goals))
-            queue.extendleft([goal]) # breadth-first search <~> FIFO
-            return queue
-
-        def variance_strategy_pop(queue: deque[Goal]) -> tuple[deque[Goal], Goal]:
-            return queue, queue.popleft() # breadth-first search <~> FIFO
-
-        def goal_selection_strategy(goal: Goal) -> tuple[Path, NonTerminalArgument[NT]]:
-            max_len = max(len(p) for p in goal.subgoals.keys())
-            filtered = filter(lambda x: len(x[0]) == max_len, goal.subgoals.items())
-            return min(filtered, key=lambda item: item[0][-1]) # leftmost selection, assuming new subgoals (deeper positions) are added "to the left" of the old ones
-
-        return self.resolution(start, variance_strategy_push, variance_strategy_pop, goal_selection_strategy, max_count)
-
-
 
     def contains_tree(self, start: NT, tree: Tree[T], interpretation: dict[T, Any] | None = None) -> bool:
         """Check if the solution space contains a given `tree` derivable from `start`."""
