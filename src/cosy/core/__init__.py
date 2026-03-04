@@ -11,7 +11,7 @@ __all__ = [
     "Var",
 ]
 
-from cosy.core.specification_builder import SpecificationBuilder
-from cosy.core.subtypes import Subtypes
-from cosy.core.synthesizer import Synthesizer
-from cosy.core.types import Arrow, Constructor, Intersection, Literal, Omega, Type, Var
+from src.cosy.core.specification_builder import SpecificationBuilder
+from src.cosy.core.subtypes import Subtypes
+from src.cosy.core.synthesizer import Synthesizer
+from src.cosy.core.types import Arrow, Constructor, Intersection, Literal, Omega, Type, Var

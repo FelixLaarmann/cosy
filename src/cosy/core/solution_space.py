@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import random
 from collections import defaultdict, deque
 from collections.abc import Callable, Hashable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
@@ -602,6 +603,25 @@ class SolutionSpace(Generic[NT, T, G]):
         def variance_strategy_push(queue: deque[Goal], new_goals: Iterable[Goal]) -> deque[Goal]:
             sorted(new_goals, key=lambda g: len(g.subgoals))  # sort by number of subgoals
             queue.extend(new_goals) # breadth-first search <~> FIFO
+            return queue
+
+        def variance_strategy_pop(queue: deque[Goal]) -> tuple[deque[Goal], Goal]:
+            return queue, queue.popleft() # breadth-first search <~> FIFO
+
+        def goal_selection_strategy(goal: Goal) -> tuple[Path, NonTerminalArgument[NT]]:
+            max_len = max(len(p) for p in goal.subgoals.keys())
+            filtered = filter(lambda x: len(x[0]) == max_len, goal.subgoals.items())
+            return min(filtered, key=lambda item: item[0][-1]) # leftmost selection, assuming new subgoals (deeper positions) are added "to the left" of the old ones
+
+        return self.resolution(start, variance_strategy_push, variance_strategy_pop, goal_selection_strategy, max_count)
+
+    def sampling(self,
+            start: NT,
+            max_count: int | None = None,) -> Iterable[Tree[T]]:
+        """A simple implementation of SLD-Resolution with leftmost goal selection and breadth-first search in the SLD-Derivation-Tree."""
+        def variance_strategy_push(queue: deque[Goal], new_goals: Iterable[Goal]) -> deque[Goal]:
+            goal = random.choice(list(new_goals))
+            queue.extendleft([goal]) # breadth-first search <~> FIFO
             return queue
 
         def variance_strategy_pop(queue: deque[Goal]) -> tuple[deque[Goal], Goal]:
