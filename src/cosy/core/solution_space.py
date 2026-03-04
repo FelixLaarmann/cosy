@@ -131,12 +131,13 @@ class Goal(Generic[NT, T, G]):
         #result: set[Goal[NT, T, G]] = set()
         if isGround:  # is triggered when the rule has only constant arguments, and therefore depends on the rule
             new_refuted[position] = Tree(rhs.terminal, children)
-            nt = new_subgoals[position] # can't pop here, because we still need to check the preds...
+            nt = new_subgoals[position] #TODO: can't pop here, because we still need to check the preds...
             existing_terms.setdefault(nt.origin, set()).add(new_refuted[position])
             #if all subgoals on a level are refutated, then the parent goal is refuted as well,
             # if the constraints are satisfied. This can be checked bottom up, starting from the last refuted goal.
+            grounded_pos = position
             while level > 0:
-                subgoal_level_pos = [p for p in new_subgoals.keys() if len(p) == level]
+                subgoal_level_pos = [p for p in new_subgoals.keys() if len(p) == level if p != grounded_pos] #TODO: but new_subgoals[position] needs to be poped here...
                 refuted_level_pos = [p for p in new_refuted.keys() if len(p) == level]
                 if not subgoal_level_pos:
                     preds = [ps for ps in new_constraints.keys() if len(ps[0]) == level]
@@ -145,10 +146,11 @@ class Goal(Generic[NT, T, G]):
                         constraints = new_constraints[ps]
                         args: tuple[Tree[T]] = tuple(new_refuted[p] for p in ps)
                         y = list(zip(ps, args))
-                        substitution = {new_subgoals[p].name : arg for p, arg in zip(ps, args)}
+                        substitution = {new_subgoals[p].name : arg for p, arg in zip(ps, args)} # TODO: but we need to check new_subgoals[position] here.
                         test = test and all([c(substitution) for c in constraints])
                         if not test:
                             return
+                    #TODO: but for every later loop this might be fine?
                     #if not test:
                         #Constraints are not satisfied. Backtracking is necessary.
                         #yield None
