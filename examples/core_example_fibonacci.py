@@ -103,6 +103,7 @@ def main():
         i += 1
     end_time = time.time()
     print(f"Enumeration and printing of {i} terms took {end_time - start_time:.2f} seconds.")
+
     """
     solution_space = SolutionSpace()
     width = 20
