@@ -147,6 +147,7 @@ class Goal(Generic[NT, T, G]):
                         args: tuple[Tree[T]] = tuple(new_refuted[p] for p in ps)
                         y = list(zip(ps, args))
                         #TODO: the following is wrong, because literals (ConstantArguments) may also be arguments to a predicate, but they are not subgoals and therefore not in new_subgoals.
+                        #TODO: introduce another dict, that maps positions to ConstantArguments, which can then be used here to construct the substitution.
                         substitution = {new_subgoals[p].name : arg for p, arg in zip(ps, args)} # -> but we need to check new_subgoals[position] here.
                         test = test and all([c(substitution) for c in constraints])
                         if not test:
