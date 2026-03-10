@@ -154,7 +154,6 @@ class Goal(Generic[NT, T, G]):
                     for ps in preds:
                         constraints, literal_substitution = new_constraints[ps]
                         args: tuple[tuple[str, Tree[T]], ...] = tuple(new_refuted[p] for p in ps)
-                        # TODO: ok, here is still a problem with when to pop a goal and how to handle the variable name of a refuted term. I suggest to change refuted into a mapping Path -> (Term, name)
                         substitution = {arg[0]: arg[1] for arg in args} | literal_substitution
                         test = test and all([c(substitution) for c in constraints])
                         if not test:
