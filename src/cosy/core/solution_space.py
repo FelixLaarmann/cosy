@@ -57,12 +57,12 @@ Path = tuple[int, ...]
 class Goal(Generic[NT, T, G]):
     constructors: dict[Path, T]
     subgoals: dict[Path, NonTerminalArgument[NT]]
-    refuted: dict[Path, Tree[T]]
-    constraints: dict[tuple[Path, ...], tuple[Callable[[dict[str, Any]], bool], ...]]
+    refuted: dict[Path, tuple[str, Tree[T]]]
+    constraints: dict[tuple[Path, ...], tuple[tuple[Callable[[dict[str, Any]], bool], ...], dict[str, T]]]
     success: bool
 
-    def __init__(self, root: dict[Path, T], subgoals: dict[Path, NonTerminalArgument[NT]], refuted: dict[Path, Tree[T]],
-                 constraints: dict[tuple[Path, ...], tuple[Callable[[dict[str, Any]], bool], ...]], success=False):
+    def __init__(self, root: dict[Path, T], subgoals: dict[Path, NonTerminalArgument[NT]], refuted: dict[Path, tuple[str, Tree[T]]],
+                 constraints: dict[tuple[Path, ...], tuple[tuple[Callable[[dict[str, Any]], bool], ...], dict[str, T]]], success=False):
         self.constructors = root
         self.subgoals = subgoals
         self.refuted = refuted
@@ -80,17 +80,17 @@ class Goal(Generic[NT, T, G]):
                 if arg.name is not None:
                     named += ((i,),)
             elif isinstance(arg, ConstantArgument):
-                refuted[(i,)] = Tree(arg.value, ())
+                refuted[(i,)] = arg.name, Tree(arg.value, ())
             else:
                 msg = f"Argument {arg} is neither a NonTerminalArgument nor a ConstantArgument"
                 raise ValueError(msg)
-        root = {() : rhs.terminal}
+        root = {(): rhs.terminal}
         if rhs.predicates:
-            constraints = {named: rhs.predicates} if named else {}
+            constraints = {named: (rhs.predicates, rhs.literal_substitution)} if named else {}
         else:
             constraints = {}
         if not subgoals:
-            refuted[()] = Tree(rhs.terminal, tuple(refuted[p] for p in sorted(refuted.keys())))
+            refuted[()] = "", Tree(rhs.terminal, tuple(refuted[p][1] for p in sorted(refuted.keys())))
             return Goal(root, subgoals, refuted, constraints, success=True)
         return Goal(root, subgoals, refuted, constraints)
 
@@ -107,6 +107,7 @@ class Goal(Generic[NT, T, G]):
 
         children: tuple[Tree[T], ...] = ()
 
+        # apply the rule at the given position
         for i, arg in enumerate(rhs.arguments):
             new_position = position + (i,)
             if isinstance(arg, NonTerminalArgument):
@@ -115,7 +116,7 @@ class Goal(Generic[NT, T, G]):
                 if arg.name is not None:
                     named += (new_position,)
             elif isinstance(arg, ConstantArgument):
-                new_refuted[new_position] = Tree(arg.value, ())
+                new_refuted[new_position] = arg.name, Tree(arg.value, ())
                 children += (Tree(arg.value, ()),)
             else:
                 msg = f"Argument {arg} is neither a NonTerminalArgument nor a ConstantArgument"
@@ -126,29 +127,35 @@ class Goal(Generic[NT, T, G]):
         new_constraints = self.constraints.copy()
         if rhs.predicates:
             if named:
-                new_constraints[named] = rhs.predicates
+                new_constraints[named] = rhs.predicates, rhs.literal_substitution
         level = len(position)
         #result: set[Goal[NT, T, G]] = set()
         if isGround:  # is triggered when the rule has only constant arguments, and therefore depends on the rule
-            new_refuted[position] = Tree(rhs.terminal, children)
+            """
+                   If applying the rule leads to a ground tree at the position, we check bottom up, 
+                   if the constraints are satisfied and if all subgoals on the same level are refuted. 
+                   If this is the case, we can refute the parent goal as well, 
+                   which can lead to a cascade of refutations up to the root goal. 
+                   If the root goal is refuted, we have found a solution.
+            """
             nt = new_subgoals[position] # -> can't pop here, because we still need to check the preds...
-            existing_terms.setdefault(nt.origin, set()).add(new_refuted[position])
-            #if all subgoals on a level are refutated, then the parent goal is refuted as well,
+            tree = Tree(rhs.terminal, children)
+            new_refuted[position] = nt.name, tree
+            existing_terms.setdefault(nt.origin, set()).add(tree)
+            #if all subgoals on a level are refuted, then the parent goal is refuted as well,
             # if the constraints are satisfied. This can be checked bottom up, starting from the last refuted goal.
             grounded_pos = position
             while level > 0:
-                subgoal_level_pos = [p for p in new_subgoals.keys() if len(p) == level if p != grounded_pos] # -> but new_subgoals[position] needs to be poped here...
+                subgoal_level_pos = [p for p in new_subgoals.keys() if len(p) == level and p != grounded_pos] # -> but new_subgoals[position] needs to be poped here...
                 refuted_level_pos = [p for p in new_refuted.keys() if len(p) == level]
-                if not subgoal_level_pos:
+                if not subgoal_level_pos: # -> to trigger this...
                     preds = [ps for ps in new_constraints.keys() if len(ps[0]) == level]
                     test = True
                     for ps in preds:
-                        constraints = new_constraints[ps]
-                        args: tuple[Tree[T]] = tuple(new_refuted[p] for p in ps)
-                        y = list(zip(ps, args))
-                        #TODO: the following is wrong, because literals (ConstantArguments) may also be arguments to a predicate, but they are not subgoals and therefore not in new_subgoals.
-                        #TODO: introduce another dict, that maps positions to ConstantArguments, which can then be used here to construct the substitution.
-                        substitution = {new_subgoals[p].name : arg for p, arg in zip(ps, args)} # -> but we need to check new_subgoals[position] here.
+                        constraints, literal_substitution = new_constraints[ps]
+                        args: tuple[tuple[str, Tree[T]], ...] = tuple(new_refuted[p] for p in ps)
+                        # TODO: ok, here is still a problem with when to pop a goal and how to handle the variable name of a refuted term. I suggest to change refuted into a mapping Path -> (Term, name)
+                        substitution = {arg[0]: arg[1] for arg in args} | literal_substitution
                         test = test and all([c(substitution) for c in constraints])
                         if not test:
                             return
@@ -159,22 +166,33 @@ class Goal(Generic[NT, T, G]):
                     #    return
                     #sort the positions by their last element, which corresponds to the position in the arguments of the parent goal
                     sorted_positions = sorted(refuted_level_pos, key=lambda p: p[-1])
-                    children = tuple(new_refuted[p] for p in sorted_positions)
-                    new_refuted[position[:-1]] = Tree(new_constructors[position[:-1]], children)
+                    children = tuple(new_refuted[p][1] for p in sorted_positions)
+                    tree = Tree(new_constructors[grounded_pos[:-1]], children)
+                    if grounded_pos[:-1]:
+                        new_refuted[grounded_pos[:-1]] = new_subgoals[grounded_pos[:-1]].name, tree
+                    else:
+                        #tree is solution for start symbol
+                        new_refuted[grounded_pos[:-1]] = "", tree
                     for p in refuted_level_pos:
                         new_refuted.pop(p)
-                    if position in new_subgoals:
-                        new_subgoals.pop(position)
-                    if position[:-1] in new_subgoals:
-                        nt = new_subgoals.pop(position[:-1])
-                        existing_terms.setdefault(nt.origin, set()).add(new_refuted[position[:-1]])
-                    position = position[:-1]
+                    if grounded_pos in new_subgoals:
+                        new_subgoals.pop(grounded_pos)
+                    if grounded_pos[:-1] in new_subgoals:
+                        nt = new_subgoals[grounded_pos[:-1]]
+                        existing_terms.setdefault(nt.origin, set()).add(tree)
+                    grounded_pos = grounded_pos[:-1]
                     level -= 1
                 else:
                     break
             #result.add(Goal(new_constructors, new_subgoals, new_refuted, new_constraints, success=level == 0))
-            yield Goal(new_constructors, new_subgoals, new_refuted, new_constraints, success=level == 0)
+            if position in new_subgoals:
+                new_subgoals.pop(position)
+            yield Goal(new_constructors, new_subgoals, new_refuted, new_constraints, success=level == 0) # -> and it finally needs to be popped here
         else:
+            """
+            If applying the rule does not lead to a ground tree at the position, 
+            we need to check for all subgoals on the same level, if they can be refuted by existing terms.
+            """
             # filter for paths to leave position subgoals
             def isPrefixOf(p: Path, q: Path) -> bool:
                 if len(p) > len(q):
@@ -189,41 +207,52 @@ class Goal(Generic[NT, T, G]):
             for combination in test:
                 new_subgoals_copy = new_subgoals.copy()
                 new_refuted_copy = new_refuted.copy()
-                for p, t in combination:
+                for position, t in combination:
                     #new_subgoals_copy.pop(p) #can't pop here, because we still need to check the preds...
-                    new_refuted_copy[p] = t
-                    level = len(p)
+                    new_refuted_copy[position] = new_subgoals_copy[position].name, t
+                    level = len(position)
+                    grounded_pos = position
                     while level > 0:
-                        subgoal_level_pos = [p for p in new_subgoals_copy.keys() if len(p) == level]
+                        subgoal_level_pos = [p for p in new_subgoals_copy.keys() if
+                                             len(p) == level and p != grounded_pos]  # -> but new_subgoals[position] needs to be poped here...
                         refuted_level_pos = [p for p in new_refuted_copy.keys() if len(p) == level]
-                        if not subgoal_level_pos:
+                        if not subgoal_level_pos:  # -> to trigger this...
                             preds = [ps for ps in new_constraints.keys() if len(ps[0]) == level]
                             test = True
                             for ps in preds:
-                                constraints = new_constraints[ps]
-                                args: tuple[Tree[T]] = tuple(new_refuted_copy[p] for p in ps)
-                                substitution = {new_subgoals_copy[p].name : arg for p, arg in zip(ps, args)}
+                                constraints, literal_substitution = new_constraints[ps]
+                                args: tuple[tuple[str, Tree[T]], ...] = tuple(new_refuted_copy[p] for p in ps)
+                                substitution = {arg[0]: arg[1] for arg in args} | literal_substitution  # -> but we need to check new_subgoals[position] here.
                                 test = test and all([c(substitution) for c in constraints])
                                 if not test:
-                                    break
-                            if not test:
-                                #Constraints are not satisfied. Backtracking is necessary.
-                                break # TODO: handle this the right way
-                            #sort the positions by their last element, which corresponds to the position in the arguments of the parent goal
+                                    return
+
+                            # if not test:
+                            # Constraints are not satisfied. Backtracking is necessary.
+                            # yield None
+                            #    return
+                            # sort the positions by their last element, which corresponds to the position in the arguments of the parent goal
                             sorted_positions = sorted(refuted_level_pos, key=lambda p: p[-1])
-                            children = tuple(new_refuted_copy[p] for p in sorted_positions)
-                            new_refuted_copy[p[:-1]] = Tree(new_constructors[p[:-1]], children)
-                            for x in refuted_level_pos:
-                                new_refuted_copy.pop(x)
-                            if p in new_subgoals_copy:
-                                new_subgoals_copy.pop(p)
-                            if p[:-1] in new_subgoals_copy:
-                                nt = new_subgoals_copy.pop(p[:-1])
-                                existing_terms.setdefault(nt.origin, set()).add(new_refuted_copy[p[:-1]])
-                            p = p[:-1]
+                            children = tuple(new_refuted_copy[p][1] for p in sorted_positions)
+                            tree = Tree(new_constructors[grounded_pos[:-1]], children)
+                            if grounded_pos[:-1]:
+                                new_refuted_copy[grounded_pos[:-1]] = new_subgoals_copy[grounded_pos[:-1]].name, tree
+                            else:
+                                # tree is solution for start symbol
+                                new_refuted_copy[grounded_pos[:-1]] = "", tree
+                            for p in refuted_level_pos:
+                                new_refuted_copy.pop(p)
+                            if grounded_pos in new_subgoals_copy:
+                                new_subgoals_copy.pop(grounded_pos)
+                            if grounded_pos[:-1] in new_subgoals_copy:
+                                nt = new_subgoals_copy[grounded_pos[:-1]]
+                                existing_terms.setdefault(nt.origin, set()).add(tree)
+                            grounded_pos = grounded_pos[:-1]
                             level -= 1
                         else:
                             break
+                    if position in new_subgoals_copy:
+                        new_subgoals_copy.pop(position)
                 #result.add(Goal(new_constructors, new_subgoals_copy, new_refuted_copy, new_constraints, success=level == 0))
                 yield Goal(new_constructors, new_subgoals_copy, new_refuted_copy, new_constraints, success=level == 0)
         #return result
@@ -550,7 +579,7 @@ class SolutionSpace(Generic[NT, T, G]):
         non_successful_goals = []
         for goal in goals:
             if goal.success:
-                new_term = goal.refuted[()]
+                new_term = goal.refuted[()][1]
                 if new_term not in all_results:
                     yield new_term
                     all_results.add(new_term)
@@ -579,7 +608,7 @@ class SolutionSpace(Generic[NT, T, G]):
                     if new_goal is not None:
                         # Termination
                         if new_goal.success:
-                            new_term = new_goal.refuted[()]
+                            new_term = new_goal.refuted[()][1]
                             if new_term not in all_results:
                                 yield new_term
                                 all_results.add(new_term)
@@ -620,6 +649,28 @@ class SolutionSpace(Generic[NT, T, G]):
 
         def variance_strategy_pop(queue: deque[Goal]) -> tuple[deque[Goal], Goal]:
             return queue, queue.popleft() # breadth-first search <~> FIFO
+
+        def goal_selection_strategy(goal: Goal) -> tuple[Path, NonTerminalArgument[NT]]:
+            max_len = max(len(p) for p in goal.subgoals.keys())
+            filtered = filter(lambda x: len(x[0]) == max_len, goal.subgoals.items())
+            return min(filtered, key=lambda item: item[0][-1]) # leftmost selection, assuming new subgoals (deeper positions) are added "to the left" of the old ones
+
+        return self.resolution(start, variance_strategy_push, variance_strategy_pop, goal_selection_strategy, max_count)
+
+    def best_first_resolution(self,
+            weighting: Callable[[Goal], float],
+            greater_is_better: bool,
+            start: NT,
+            max_count: int | None = None,) -> Iterable[Tree[T]]:
+        """A simple implementation of SLD-Resolution with leftmost goal selection and greedy best first search in the SLD-Derivation-Tree."""
+        def variance_strategy_push(queue: deque[Goal], new_goals: Iterable[Goal]) -> deque[Goal]:
+            factor = -1 if greater_is_better else 1
+            sorted(new_goals, key=lambda g: factor * weighting(g))  # sort by weighting
+            queue.extendleft(new_goals) # depth-first search <~> LIFO
+            return queue
+
+        def variance_strategy_pop(queue: deque[Goal]) -> tuple[deque[Goal], Goal]:
+            return queue, queue.popleft() # depth-first search <~> LIFO
 
         def goal_selection_strategy(goal: Goal) -> tuple[Path, NonTerminalArgument[NT]]:
             max_len = max(len(p) for p in goal.subgoals.keys())
