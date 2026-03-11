@@ -204,7 +204,7 @@ class Goal(Generic[NT, T, G]):
                         return
                 sorted_positions = sorted(new_refuted.keys(), key=lambda p: p[-1])
                 children = tuple(new_refuted[p][1] for p in sorted_positions)
-                tree = Tree(new_constructors[position[:-1]], children)
+                tree = Tree(new_constructors[()], children)
                 new_refuted[()] = "", tree
             yield Goal(new_constructors, new_subgoals, new_refuted, new_constraints, success=len(new_subgoals) == 0) # -> and it finally needs to be popped here
         else:
@@ -282,7 +282,7 @@ class Goal(Generic[NT, T, G]):
 
                     sorted_positions = sorted(new_refuted_copy.keys(), key=lambda p: p[-1])
                     children = tuple(new_refuted_copy[p][1] for p in sorted_positions)
-                    tree = Tree(new_constructors[position[:-1]], children)
+                    tree = Tree(new_constructors[()], children)
                     new_refuted_copy[()] = "", tree
                 yield Goal(new_constructors, new_subgoals_copy, new_refuted_copy, new_constraints, success=len(new_subgoals_copy) == 0)
         #return result

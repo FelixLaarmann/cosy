@@ -1218,7 +1218,7 @@ if __name__ == "__main__":
                               (None, None, None, None)
                           )))
 
-    target = target2
+    target = target4
     synthesizer = Synthesizer(repo.specification(), {})
 
     start_time = time.time()
@@ -1228,7 +1228,7 @@ if __name__ == "__main__":
     print(f"SolutionSpace construction took {end_time - start_time:.5f} seconds.")
 
     start_time = time.time()
-    terms = solution_space.depth_first_resolution(target, max_count=5)
+    terms = solution_space.enumerate_trees(target, max_count=5)
     end_time = time.time()
 
     print(f"Term-Generator construction took {end_time - start_time:.5f} seconds.")
