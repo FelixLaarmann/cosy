@@ -83,7 +83,7 @@ def component_specifications() -> Mapping[
     }
 
 
-SIZE = 100
+SIZE = 6
 
 def euclidean_distance(pos1: tuple[int, int], pos2: tuple[int, int]) -> float:
     return ((pos1[0] - pos2[0]) ** 2 + (pos1[1] - pos2[1]) ** 2) ** 0.5
@@ -132,9 +132,9 @@ def main():
     end_time = time.time()
 
     print(f"SolutionSpace construction took {end_time - start_time:.5f} seconds.")
-    """
+    #"""
     start_time = time.time()
-    terms = solution_space.enumerate_trees(target, max_count=5)
+    terms = solution_space.breadth_first_resolution(target, max_count=5)
     end_time = time.time()
     """
     start_time = time.time()
@@ -144,7 +144,7 @@ def main():
                                       variance_strategy_pop=variance_strategy_pop,
                                       goal_selection_strategy=goal_selection_strategy)
     end_time = time.time()
-    #"""
+    """
     #start_time = time.time()
     #terms = solution_space.enumerate_trees(target, max_count=5)
     #end_time = time.time()
@@ -182,6 +182,23 @@ def main():
         i += 1
     end_time = time.time()
     print(f"Enumeration and printing of {i} terms took {end_time - start_time:.2f} seconds.")
+    """
+
+    """
+START => DOWN((0, 1)) => RIGHT((1, 1)) => RIGHT((2, 1)) => DOWN((2, 2)) => RIGHT((3, 2)) => DOWN((3, 3)) => RIGHT((4, 3)) => DOWN((4, 4)) => RIGHT((5, 4)) => DOWN((5, 5)) => DOWN((5, 6)) => RIGHT((6, 6)) => RIGHT((7, 6)) => DOWN((7, 7)) => RIGHT((8, 7)) => DOWN((8, 8)) => DOWN((8, 9)) => RIGHT((9, 9))
+START => DOWN((0, 1)) => RIGHT((1, 1)) => RIGHT((2, 1)) => DOWN((2, 2)) => DOWN((2, 3)) => RIGHT((3, 3)) => RIGHT((4, 3)) => DOWN((4, 4)) => RIGHT((5, 4)) => DOWN((5, 5)) => DOWN((5, 6)) => RIGHT((6, 6)) => RIGHT((7, 6)) => DOWN((7, 7)) => RIGHT((8, 7)) => DOWN((8, 8)) => DOWN((8, 9)) => RIGHT((9, 9))
+START => DOWN((0, 1)) => DOWN((0, 2)) => DOWN((0, 3)) => RIGHT((1, 3)) => RIGHT((2, 3)) => RIGHT((3, 3)) => RIGHT((4, 3)) => DOWN((4, 4)) => RIGHT((5, 4)) => DOWN((5, 5)) => DOWN((5, 6)) => RIGHT((6, 6)) => RIGHT((7, 6)) => DOWN((7, 7)) => RIGHT((8, 7)) => DOWN((8, 8)) => DOWN((8, 9)) => RIGHT((9, 9))
+START => DOWN((0, 1)) => DOWN((0, 2)) => DOWN((0, 3)) => RIGHT((1, 3)) => RIGHT((2, 3)) => UP((2, 2)) => RIGHT((3, 2)) => DOWN((3, 3)) => RIGHT((4, 3)) => DOWN((4, 4)) => RIGHT((5, 4)) => DOWN((5, 5)) => DOWN((5, 6)) => RIGHT((6, 6)) => RIGHT((7, 6)) => DOWN((7, 7)) => RIGHT((8, 7)) => DOWN((8, 8)) => DOWN((8, 9)) => RIGHT((9, 9))
+START => DOWN((0, 1)) => RIGHT((1, 1)) => RIGHT((2, 1)) => DOWN((2, 2)) => RIGHT((3, 2)) => RIGHT((4, 2)) => DOWN((4, 3)) => DOWN((4, 4)) => RIGHT((5, 4)) => DOWN((5, 5)) => DOWN((5, 6)) => RIGHT((6, 6)) => RIGHT((7, 6)) => DOWN((7, 7)) => RIGHT((8, 7)) => DOWN((8, 8)) => DOWN((8, 9)) => RIGHT((9, 9))
+
+START => DOWN((0, 1)) => DOWN((0, 2)) => DOWN((0, 3)) => RIGHT((1, 3)) => RIGHT((2, 3)) => RIGHT((3, 3)) => RIGHT((4, 3)) => DOWN((4, 4)) => RIGHT((5, 4)) => DOWN((5, 5)) => DOWN((5, 6)) => RIGHT((6, 6)) => RIGHT((7, 6)) => RIGHT((8, 6)) => RIGHT((9, 6)) => DOWN((9, 7)) => DOWN((9, 8)) => DOWN((9, 9))
+START => DOWN((0, 1)) => DOWN((0, 2)) => DOWN((0, 3)) => RIGHT((1, 3)) => RIGHT((2, 3)) => RIGHT((3, 3)) => RIGHT((4, 3)) => DOWN((4, 4)) => RIGHT((5, 4)) => DOWN((5, 5)) => DOWN((5, 6)) => RIGHT((6, 6)) => DOWN((6, 7)) => RIGHT((7, 7)) => DOWN((7, 8)) => RIGHT((8, 8)) => DOWN((8, 9)) => RIGHT((9, 9))
+START => DOWN((0, 1)) => DOWN((0, 2)) => DOWN((0, 3)) => RIGHT((1, 3)) => RIGHT((2, 3)) => RIGHT((3, 3)) => RIGHT((4, 3)) => DOWN((4, 4)) => RIGHT((5, 4)) => DOWN((5, 5)) => DOWN((5, 6)) => RIGHT((6, 6)) => DOWN((6, 7)) => RIGHT((7, 7)) => DOWN((7, 8)) => RIGHT((8, 8)) => RIGHT((9, 8)) => DOWN((9, 9))
+START => DOWN((0, 1)) => DOWN((0, 2)) => DOWN((0, 3)) => RIGHT((1, 3)) => RIGHT((2, 3)) => RIGHT((3, 3)) => RIGHT((4, 3)) => DOWN((4, 4)) => RIGHT((5, 4)) => DOWN((5, 5)) => DOWN((5, 6)) => RIGHT((6, 6)) => DOWN((6, 7)) => RIGHT((7, 7)) => RIGHT((8, 7)) => DOWN((8, 8)) => DOWN((8, 9)) => RIGHT((9, 9))
+START => DOWN((0, 1)) => DOWN((0, 2)) => DOWN((0, 3)) => RIGHT((1, 3)) => RIGHT((2, 3)) => RIGHT((3, 3)) => RIGHT((4, 3)) => DOWN((4, 4)) => RIGHT((5, 4)) => DOWN((5, 5)) => DOWN((5, 6)) => RIGHT((6, 6)) => DOWN((6, 7)) => RIGHT((7, 7)) => RIGHT((8, 7)) => DOWN((8, 8)) => RIGHT((9, 8)) => DOWN((9, 9))
+    """
+
+    """
     """
 if __name__ == "__main__":
     main()
