@@ -31,7 +31,7 @@ class AVL_Repository:
 
             "Fork": SpecificationBuilder()
             .parameter("h1", heights)
-            .parameter("h2", heights, lambda v: [v["h1"] - 1, v["h1"], v["h1"] + 1]) # AVL balance condition
+            .parameter("h2", heights, lambda v: [v["h1"] - 1, v["h1"], v["h1"] + 1] if v["h1"] > 0 else [v["h1"], v["h1"] + 1]) # AVL balance condition
             .parameter("h", heights, lambda vs: [max(vs["h1"], vs["h2"]) + 1])
             .parameter("l", labels)
             .argument("left", Constructor("AVL", Constructor("height", Var("h1")) & Constructor("label", Literal(None))))
@@ -69,7 +69,7 @@ if __name__ == "__main__":
     print(f"SolutionSpace construction took {end_time - start_time:.5f} seconds.")
 
     start_time = time.time()
-    terms = solution_space.depth_first_resolution(target, max_count=100)
+    terms = solution_space.enumerate_trees(target, max_count=100)
     end_time = time.time()
 
     print(f"Term-Generator construction for resolution took {end_time - start_time:.5f} seconds.")
