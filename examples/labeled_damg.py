@@ -1218,7 +1218,7 @@ if __name__ == "__main__":
                               (None, None, None, None)
                           )))
 
-    target = target4
+    target = target3
     synthesizer = Synthesizer(repo.specification(), {})
 
     start_time = time.time()
@@ -1228,10 +1228,24 @@ if __name__ == "__main__":
     print(f"SolutionSpace construction took {end_time - start_time:.5f} seconds.")
 
     start_time = time.time()
-    terms = solution_space.enumerate_trees(target, max_count=5)
+    terms = solution_space.enumerate_trees(target, max_count=50)
     end_time = time.time()
 
-    print(f"Term-Generator construction took {end_time - start_time:.5f} seconds.")
+    print(f"Term-Generator construction for resolution took {end_time - start_time:.5f} seconds.")
+
+    start_time = time.time()
+    i = 0
+    for term in terms:
+        print(term.interpret(repo.pretty_term_algebra()))
+        i += 1
+    end_time = time.time()
+    print(f"Resolution and printing of {i} terms took {end_time - start_time:.2f} seconds.")
+
+    start_time = time.time()
+    terms = solution_space.breadth_first_resolution(target, max_count=50)
+    end_time = time.time()
+
+    print(f"Term-Generator construction for enumeration took {end_time - start_time:.5f} seconds.")
 
     start_time = time.time()
     i = 0

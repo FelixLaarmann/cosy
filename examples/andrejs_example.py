@@ -33,7 +33,7 @@ def main():
 
 
     start_time = time.time()
-    terms = solution_space.breadth_first_resolution("T0", max_count=100)
+    terms = solution_space.depth_first_resolution("T0", max_count=100)
     end_time = time.time()
 
     #start_time = time.time()

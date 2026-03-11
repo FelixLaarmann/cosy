@@ -55,9 +55,10 @@ Path = tuple[int, ...]
 
 
 class Goal(Generic[NT, T, G]):
+    # TODO: kommentieren
     constructors: dict[Path, T]
     subgoals: dict[Path, NonTerminalArgument[NT]]
-    refuted: dict[Path, tuple[str, Tree[T]]]
+    refuted: dict[Path, tuple[str, Tree[T]]] # TODO: in grounded o.ä. umbennen
     constraints: dict[tuple[Path, ...], tuple[tuple[Callable[[dict[str, Any]], bool], ...], dict[str, T]]]
     success: bool
 
@@ -145,7 +146,8 @@ class Goal(Generic[NT, T, G]):
             existing_terms.setdefault(nt.origin, set()).add(tree)
 
             for p in [x for x in new_refuted.keys() if x[:-1] == position]:
-                    new_refuted.pop(p)
+                new_refuted.pop(p)
+
             #if all subgoals on a level are refuted, then the parent goal is refuted as well,
             #if the constraints are satisfied. This can be checked bottom up, starting from the last refuted goal.
 
@@ -162,12 +164,12 @@ class Goal(Generic[NT, T, G]):
                         test = test and all([c(substitution) for c in constraints])
                         if not test:
                             return
-
                     #sort the positions by their last element, which corresponds to the position in the arguments of the parent goal
                     sorted_positions = sorted(refuted_level_pos, key=lambda p: p[-1])
                     children = tuple(new_refuted[p][1] for p in sorted_positions)
                     #build the tree for the parent goal
                     tree = Tree(new_constructors[position[:-1]], children)
+                    # TODO: wieder weg
                     if common_prefix:
                         new_refuted[position[:-1]] = new_subgoals[position[:-1]].name, tree
                     else:
@@ -183,10 +185,7 @@ class Goal(Generic[NT, T, G]):
                     position = position[:-1]
                     common_prefix = position[:-1]
                 else:
-                    break
-            #result.add(Goal(new_constructors, new_subgoals, new_refuted, new_constraints, success=level == 0))
-            #if position in new_subgoals:
-            #    new_subgoals.pop(position)
+                    break # TODO: refactor als einziges if nach oben
 
             if len(new_subgoals) == 0:
                 # assert that common_prefix == ()
@@ -215,11 +214,11 @@ class Goal(Generic[NT, T, G]):
             # filter for paths to leave position subgoals
             leaves = {p for p in new_subgoals.keys() if p[:-1] == position}
             # filter for subgoals, that can be refuted by existing terms
-            ref_pos = [[(p, t) for t in existing_terms[new_subgoals[p].origin]] for p in leaves if new_subgoals[p].origin in existing_terms]
-
+            #TODO: überprüfen, wie leere Menge im Produkt und nicht-terminale im goal erhalten bleiben
+            ref_pos = [[(p, t) for t in existing_terms[new_subgoals[p].origin]] for p in leaves if new_subgoals[p].origin in existing_terms.keys()]     # TODO: in innerer Liste noch das NT hinzufügen, sodass nie ein Produkt mit [] gebaut wird und NTs erhalten bleiben
             prod = product(*ref_pos)
-            combinations = list(prod)
-            for combination in combinations:
+            #combinations = list(prod)
+            for combination in prod:
                 new_subgoals_copy = new_subgoals.copy()
                 new_refuted_copy = new_refuted.copy()
                 for grounded_pos, t in combination:
@@ -285,6 +284,8 @@ class Goal(Generic[NT, T, G]):
                     tree = Tree(new_constructors[()], children)
                     new_refuted_copy[()] = "", tree
                 yield Goal(new_constructors, new_subgoals_copy, new_refuted_copy, new_constraints, success=len(new_subgoals_copy) == 0)
+
+            # TODO: hier noch ein yield Goal?
         #return result
         return
 
@@ -638,7 +639,7 @@ class SolutionSpace(Generic[NT, T, G]):
                     if new_goal is not None:
                         # Termination
                         if new_goal.success:
-                            new_term = new_goal.refuted[()][1]
+                            new_term = new_goal.refuted[()][1] # TODO: evtl. hier ein named tuple, damit lesbarer
                             if new_term not in all_results:
                                 yield new_term
                                 all_results.add(new_term)
