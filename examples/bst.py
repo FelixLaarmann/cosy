@@ -111,7 +111,7 @@ class BST_Bad_Repository:
 
 if __name__ == "__main__":
 
-    repo = BST_Repository(5,["A", "B", "C"])
+    repo = BST_Repository(5,["A", "B"])
 
     target = Constructor("BST", Constructor("height", Literal(4)) & Constructor("label", Literal(None)))
     synthesizer = Synthesizer(repo.specification(), {})

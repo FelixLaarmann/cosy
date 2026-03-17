@@ -132,7 +132,7 @@ def main():
     end_time = time.time()
 
     print(f"SolutionSpace construction took {end_time - start_time:.5f} seconds.")
-    #"""
+    """
     start_time = time.time()
     terms = solution_space.enumerate_trees(target, max_count=1)
     end_time = time.time()
@@ -142,9 +142,9 @@ def main():
     terms = solution_space.resolution(target, max_count=1,
                                       variance_strategy_push=variance_strategy_push,
                                       variance_strategy_pop=variance_strategy_pop,
-                                      goal_selection_strategy=goal_selection_strategy)
+                                      subgoal_selection_strategy=goal_selection_strategy)
     end_time = time.time()
-    """
+    #"""
     #start_time = time.time()
     #terms = solution_space.enumerate_trees(target, max_count=5)
     #end_time = time.time()

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import random
 from collections import defaultdict, deque
 from collections.abc import Callable, Hashable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
@@ -10,7 +9,6 @@ from itertools import product
 from queue import PriorityQueue
 from types import FunctionType
 from typing import Any, Generic, TypeVar
-from itertools import product
 
 from src.cosy.core.tree import Tree
 
@@ -65,14 +63,21 @@ class Goal(Generic[NT, T, G]):
     If all positions are grounded and all constraints are satisfied, the goal is successful and
     the tree at the root position is a solution.
     """
+
     constructors: dict[Path, T]
     subgoals: dict[Path, NonTerminalArgument[NT]]
     grounded: dict[Path, tuple[str, Tree[T]]]
     constraints: dict[tuple[Path, ...], tuple[tuple[Callable[[dict[str, Any]], bool], ...], dict[str, T]]]
     success: bool
 
-    def __init__(self, root: dict[Path, T], subgoals: dict[Path, NonTerminalArgument[NT]], grounded: dict[Path, tuple[str, Tree[T]]],
-                 constraints: dict[tuple[Path, ...], tuple[tuple[Callable[[dict[str, Any]], bool], ...], dict[str, T]]], success=False):
+    def __init__(
+        self,
+        root: dict[Path, T],
+        subgoals: dict[Path, NonTerminalArgument[NT]],
+        grounded: dict[Path, tuple[str, Tree[T]]],
+        constraints: dict[tuple[Path, ...], tuple[tuple[Callable[[dict[str, Any]], bool], ...], dict[str, T]]],
+        success,
+    ):
         self.constructors = root
         self.subgoals = subgoals
         self.grounded = grounded
@@ -80,7 +85,7 @@ class Goal(Generic[NT, T, G]):
         self.success = success
 
     @classmethod
-    def from_rhs_rule(self, rhs: RHSRule[NT, T, G]) -> Goal[NT, T, G]:
+    def from_rhs_rule(cls, rhs: RHSRule[NT, T, G]) -> Goal[NT, T, G] | None:
         """
         Create a goal from an RHSRule.
         The terminal becomes the combinator applied at the root.
@@ -90,8 +95,8 @@ class Goal(Generic[NT, T, G]):
         the local variable names from the RHSRule are stored additionally to the predicates that are applied at
         the given positions.
         """
-        subgoals = {}
-        grounded = {}
+        subgoals: dict[Path, NonTerminalArgument[NT]] = {}
+        grounded: dict[Path, tuple[str, Tree[T]]] = {}
         named: tuple[Path, ...] = ()
         for i, arg in enumerate(rhs.arguments):
             if isinstance(arg, NonTerminalArgument):
@@ -102,36 +107,35 @@ class Goal(Generic[NT, T, G]):
                 grounded[(i,)] = arg.name, Tree(arg.value, ())
             else:
                 msg = f"Argument {arg} is neither a NonTerminalArgument nor a ConstantArgument"
-                raise ValueError(msg)
-        root = {(): rhs.terminal}
-        if rhs.predicates:
-            constraints = {named: (rhs.predicates, rhs.literal_substitution)} if named else {}
-        else:
-            constraints = {}
+                raise TypeError(msg)
+        root: dict[Path, T] = {(): rhs.terminal}
+        constraints = ({named: (rhs.predicates, rhs.literal_substitution)} if named else {}) if rhs.predicates else {}
         if not subgoals:
+            substitution = dict(grounded.values()) | rhs.literal_substitution
+            if not all(c(substitution) for c in rhs.predicates):
+                return None
             grounded[()] = "", Tree(rhs.terminal, tuple(grounded[p][1] for p in sorted(grounded.keys())))
             return Goal(root, subgoals, grounded, constraints, success=True)
-        return Goal(root, subgoals, grounded, constraints)
-
+        return Goal(root, subgoals, grounded, constraints, success=False)
 
     def update(self, rhs: RHSRule[NT, T, G], position: Path) -> Goal[NT, T, G] | None:
         """
         Update the goal by applying the given rule at the given position.
         If the rule cannot be applied (because a constraint/predicate is violated) at the given position, return None.
         """
-        new_subgoals = self.subgoals.copy()
-        new_grounded = self.grounded.copy()
+        new_subgoals: dict[Path, NonTerminalArgument[NT]] = self.subgoals.copy()
+        new_grounded: dict[Path, tuple[str, Tree[T]]] = self.grounded.copy()
         named: tuple[Path, ...] = ()
 
-        isGround = True
+        is_ground = True
 
         children: tuple[Tree[T], ...] = ()
 
         # apply the rule at the given position
         for i, arg in enumerate(rhs.arguments):
-            new_position = position + (i,)
+            new_position = (*position, i)
             if isinstance(arg, NonTerminalArgument):
-                isGround = False
+                is_ground = False
                 new_subgoals[new_position] = arg
                 if arg.name is not None:
                     named += (new_position,)
@@ -140,75 +144,77 @@ class Goal(Generic[NT, T, G]):
                 children += (Tree(arg.value, ()),)
             else:
                 msg = f"Argument {arg} is neither a NonTerminalArgument nor a ConstantArgument"
-                raise ValueError(msg)
+                raise TypeError(msg)
 
         new_constructors = self.constructors.copy()
         new_constructors[position] = rhs.terminal
         new_constraints = self.constraints.copy()
-        if rhs.predicates:
-            if named:
-                new_constraints[named] = rhs.predicates, rhs.literal_substitution
+        if rhs.predicates and named:
+            new_constraints[named] = rhs.predicates, rhs.literal_substitution
 
         common_prefix = position[:-1]
 
-        if isGround:
+        if is_ground:
             """
-                   If applying the rule leads to a ground tree at the position, we check bottom up, 
-                   if the constraints are satisfied and if all subgoals on the same level are grounded. 
-                   If this is the case, we can ground the parent goal as well, 
-                   which can lead to a cascade of cumulating subtrees into bigger ones up to the root. 
+                   If applying the rule leads to a ground tree at the position, we check bottom up,
+                   if the constraints are satisfied and if all subgoals on the same level are grounded.
+                   If this is the case, we can ground the parent goal as well,
+                   which can lead to a cascade of cumulating subtrees into bigger ones up to the root.
                    If the root grounded, we have found a solution.
             """
-            nt = new_subgoals.pop(position)
+            nt: NonTerminalArgument[NT] = new_subgoals.pop(position)
             tree = Tree(rhs.terminal, children)
-            new_grounded[position] = nt.name, tree
+            new_grounded[position] = (nt.name, tree) if nt.name is not None else ("", tree)
             # if a parent position becomes grounded, there is no need to map the children position to subtrees anymore
-            for p in [x for x in new_grounded.keys() if x[:-1] == position]:
+            for p in [x for x in new_grounded if x[:-1] == position]:
                 new_grounded.pop(p)
             # move the path bottom up and check if all children are grounded and the parent can be grounded as well
             while common_prefix:
-                subgoal_level_pos = [p for p in new_subgoals.keys() if p[:-1] == common_prefix]
-                grounded_level_pos = [p for p in new_grounded.keys() if p[:-1] == common_prefix]
+                subgoal_level_pos = [p for p in new_subgoals if p[:-1] == common_prefix]
+                grounded_level_pos = [p for p in new_grounded if p[:-1] == common_prefix]
                 if subgoal_level_pos:
                     break
                 # if all arguments are grounded, we can ground the parent as well, if the constraints are satisfied
-                else:
-                    # check all constraints
-                    preds = [ps for ps in new_constraints.keys() if ps[0][:-1] == common_prefix]
-                    for ps in preds:
-                        constraints, literal_substitution = new_constraints[ps]
-                        args: tuple[tuple[str, Tree[T]], ...] = tuple(new_grounded[p] for p in ps)
-                        substitution = dict(args) | literal_substitution
-                        if not all([c(substitution) for c in constraints]):
-                            return None
-                    # sort the positions by their last element,
-                    # which corresponds to the position in the arguments of the parent position
-                    sorted_positions = sorted(grounded_level_pos, key=lambda p: p[-1])
-                    children = tuple(new_grounded[p][1] for p in sorted_positions)
-                    # construct the tree for the parent position
-                    tree = Tree(new_constructors[position[:-1]], children)
-                    new_grounded[position[:-1]] = new_subgoals[position[:-1]].name, tree
-                    # tidy up
-                    for p in grounded_level_pos:
-                        new_grounded.pop(p)
-                    if position in new_subgoals.keys():
-                        new_subgoals.pop(position)
-                    if position[:-1] in new_subgoals.keys():
-                        new_subgoals.pop(position[:-1])
-                    position = position[:-1]
-                    common_prefix = position[:-1]
-
-            if len(new_subgoals) == 0:
-                # if there are no subgoals left, the root must be grounded
-                if not common_prefix == ():
-                    raise AssertionError("common_prefix should be empty when all subgoals are grounded")
-                # check all constraints and return None if a not all constraints are satisfied
-                preds = [ps for ps in new_constraints.keys() if ps[0][:-1] == ()]
+                # check all constraints
+                preds = [ps for ps in new_constraints if ps[0][:-1] == common_prefix]
                 for ps in preds:
                     constraints, literal_substitution = new_constraints[ps]
                     args: tuple[tuple[str, Tree[T]], ...] = tuple(new_grounded[p] for p in ps)
                     substitution = dict(args) | literal_substitution
-                    if not all([c(substitution) for c in constraints]):
+                    if not all(c(substitution) for c in constraints):
+                        return None
+                # sort the positions by their last element,
+                # which corresponds to the position in the arguments of the parent position
+                sorted_positions = sorted(grounded_level_pos, key=lambda p: p[-1])
+                children = tuple(new_grounded[p][1] for p in sorted_positions)
+                # construct the tree for the parent position
+                tree = Tree(new_constructors[position[:-1]], children)
+                if position[:-1] in new_subgoals:
+                    nt = new_subgoals.pop(position[:-1])
+                    new_grounded[position[:-1]] = (nt.name, tree) if nt.name is not None else ("", tree)
+                else:
+                    msg = "the parent to a nonterminal must be a nonterminal as well"
+                    raise ValueError(msg)
+                # tidy up
+                for p in grounded_level_pos:
+                    new_grounded.pop(p)
+                if position in new_subgoals:
+                    new_subgoals.pop(position)
+                position = position[:-1]
+                common_prefix = position[:-1]
+
+            if len(new_subgoals) == 0:
+                # if there are no subgoals left, the root must be grounded
+                if common_prefix != ():
+                    msg = "common_prefix should be empty when all subgoals are grounded"
+                    raise AssertionError(msg)
+                # check all constraints and return None if a not all constraints are satisfied
+                preds = [ps for ps in new_constraints if ps[0][:-1] == ()]
+                for ps in preds:
+                    constraints, literal_substitution = new_constraints[ps]
+                    args = tuple(new_grounded[p] for p in ps)
+                    substitution = dict(args) | literal_substitution
+                    if not all(c(substitution) for c in constraints):
                         return None
                 # sort the positions by their last element,
                 # which corresponds to the position in the arguments of the parent position
@@ -218,15 +224,11 @@ class Goal(Generic[NT, T, G]):
                 tree = Tree(new_constructors[()], children)
                 new_grounded[()] = "", tree
             return Goal(new_constructors, new_subgoals, new_grounded, new_constraints, success=len(new_subgoals) == 0)
-        else:
-            """
-            If applying the rule does not lead to a ground tree at the position, 
-            we return the updated goal.
-            """
-            return Goal(new_constructors, new_subgoals, new_grounded, new_constraints, success=False)
-
-
-
+        """
+        If applying the rule does not lead to a ground tree at the position,
+        we return the updated goal.
+        """
+        return Goal(new_constructors, new_subgoals, new_grounded, new_constraints, success=False)
 
 
 class SolutionSpace(Generic[NT, T, G]):
@@ -420,11 +422,8 @@ class SolutionSpace(Generic[NT, T, G]):
         if start not in self.nonterminals():
             return
 
-        # Terme, die für NTs abgeleitet, aber noch nicht verarbeitet wurden
         queues: dict[NT, PriorityQueue[Tree[T]]] = {n: PriorityQueue() for n in self.nonterminals()}
-        # memoization of already existing terms for each non-terminal
         existing_terms: dict[NT, set[Tree[T]]] = {n: set() for n in self.nonterminals()}
-        # Ordnet NTs den Regeln zu, in denen sie als Argumente vorkommen
         inverse_grammar: dict[NT, deque[tuple[NT, RHSRule[NT, T, G]]]] = {n: deque() for n in self.nonterminals()}
         all_results: set[Tree[T]] = set()
 
@@ -478,16 +477,18 @@ class SolutionSpace(Generic[NT, T, G]):
         return
 
     def resolution(
-            self,
-            start: NT,
-            variance_strategy_push: Callable[[deque[Goal], Iterable[Goal]], deque[Goal]],
-            variance_strategy_pop: Callable[[deque[Goal]], tuple[deque[Goal], Goal]],
-            subgoal_selection_strategy: Callable[[Goal], tuple[Path, NonTerminalArgument[NT]]],
-            max_count: int | None = None,
+        self,
+        start: NT,
+        variance_strategy_push: Callable[[deque[Goal], Iterable[Goal]], deque[Goal]],
+        variance_strategy_pop: Callable[[deque[Goal]], tuple[deque[Goal], Goal]],
+        subgoal_selection_strategy: Callable[[Goal], tuple[Path, NonTerminalArgument[NT]]],
+        max_count: int | None = None,
     ) -> Iterable[Tree[T]]:
         """
         Enumerate terms implemented via SLD-Resolution.
         The NT start is the request/ first goal.
+
+        If the solution space is not pruned, resolution may lead to unexpected behavior.
 
         It is important to note, that a solution space differs from a logic program as follows:
         While the CLSP synthesizes a logic program of the following form:
@@ -544,15 +545,16 @@ class SolutionSpace(Generic[NT, T, G]):
         # yield all solutions for already successful initial goals
         non_successful_goals = []
         for goal in goals:
-            if goal.success:
-                new_term = goal.grounded[()][1]
-                if new_term not in all_results:
-                    yield new_term
-                    all_results.add(new_term)
-                    if max_count is not None and len(all_results) >= max_count:
-                        return
-            else:
-                non_successful_goals.append(goal)
+            if goal is not None:
+                if goal.success:
+                    new_term = goal.grounded[()][1]
+                    if new_term not in all_results:
+                        yield new_term
+                        all_results.add(new_term)
+                        if max_count is not None and len(all_results) >= max_count:
+                            return
+                else:
+                    non_successful_goals.append(goal)
         non_successful_goals.reverse()
         variance: deque[Goal] = variance_strategy_push(deque(), non_successful_goals)
 
@@ -581,63 +583,49 @@ class SolutionSpace(Generic[NT, T, G]):
             variance = variance_strategy_push(variance, new_goals)
         return
 
-    def depth_first_resolution(self,
-                               start: NT,
-                               max_count: int | None = None, ) -> Iterable[Tree[T]]:
+    def depth_first_resolution(
+        self,
+        start: NT,
+        max_count: int | None = None,
+    ) -> Iterable[Tree[T]]:
         """A simple implementation of SLD-Resolution with leftmost goal selection and depth-first search in the SLD-Derivation-Tree."""
+
         def variance_strategy_push(queue: deque[Goal], new_goals: Iterable[Goal]) -> deque[Goal]:
             sorted(new_goals, key=lambda g: len(g.subgoals))  # sort by number of subgoals
-            queue.extendleft(new_goals) # depth-first search <~> LIFO
+            queue.extendleft(new_goals)  # depth-first search <~> LIFO
             return queue
 
         def variance_strategy_pop(queue: deque[Goal]) -> tuple[deque[Goal], Goal]:
-            return queue, queue.popleft() # depth-first search <~> LIFO
+            return queue, queue.popleft()  # depth-first search <~> LIFO
 
         def goal_selection_strategy(goal: Goal) -> tuple[Path, NonTerminalArgument[NT]]:
-            max_len = max(len(p) for p in goal.subgoals.keys())
+            max_len = max(len(p) for p in goal.subgoals)
             filtered = filter(lambda x: len(x[0]) == max_len, goal.subgoals.items())
-            return min(filtered, key=lambda item: item[0][-1]) # leftmost selection, assuming new subgoals (deeper positions) are added "to the left" of the old ones
+            return min(filtered, key=lambda item: item[0][-1])  # leftmost selection,
+            # assuming new subgoals (deeper positions) are added "to the left" of the old ones
 
         return self.resolution(start, variance_strategy_push, variance_strategy_pop, goal_selection_strategy, max_count)
 
-    def breadth_first_resolution(self,
-            start: NT,
-            max_count: int | None = None,) -> Iterable[Tree[T]]:
+    def breadth_first_resolution(
+        self,
+        start: NT,
+        max_count: int | None = None,
+    ) -> Iterable[Tree[T]]:
         """A simple implementation of SLD-Resolution with leftmost goal selection and breadth-first search in the SLD-Derivation-Tree."""
+
         def variance_strategy_push(queue: deque[Goal], new_goals: Iterable[Goal]) -> deque[Goal]:
             sorted(new_goals, key=lambda g: len(g.subgoals))  # sort by number of subgoals
-            queue.extend(new_goals) # breadth-first search <~> FIFO
+            queue.extend(new_goals)  # breadth-first search <~> FIFO
             return queue
 
         def variance_strategy_pop(queue: deque[Goal]) -> tuple[deque[Goal], Goal]:
-            return queue, queue.popleft() # breadth-first search <~> FIFO
+            return queue, queue.popleft()  # breadth-first search <~> FIFO
 
         def goal_selection_strategy(goal: Goal) -> tuple[Path, NonTerminalArgument[NT]]:
-            max_len = max(len(p) for p in goal.subgoals.keys())
+            max_len = max(len(p) for p in goal.subgoals)
             filtered = filter(lambda x: len(x[0]) == max_len, goal.subgoals.items())
-            return min(filtered, key=lambda item: item[0][-1]) # leftmost selection, assuming new subgoals (deeper positions) are added "to the left" of the old ones
-
-        return self.resolution(start, variance_strategy_push, variance_strategy_pop, goal_selection_strategy, max_count)
-
-    def best_first_resolution(self,
-            weighting: Callable[[Goal], float],
-            greater_is_better: bool,
-            start: NT,
-            max_count: int | None = None,) -> Iterable[Tree[T]]:
-        """A simple implementation of SLD-Resolution with leftmost goal selection and greedy best first search in the SLD-Derivation-Tree."""
-        def variance_strategy_push(queue: deque[Goal], new_goals: Iterable[Goal]) -> deque[Goal]:
-            factor = -1 if greater_is_better else 1
-            sorted(new_goals, key=lambda g: factor * weighting(g))  # sort by weighting
-            queue.extendleft(new_goals) # depth-first search <~> LIFO
-            return queue
-
-        def variance_strategy_pop(queue: deque[Goal]) -> tuple[deque[Goal], Goal]:
-            return queue, queue.popleft() # depth-first search <~> LIFO
-
-        def goal_selection_strategy(goal: Goal) -> tuple[Path, NonTerminalArgument[NT]]:
-            max_len = max(len(p) for p in goal.subgoals.keys())
-            filtered = filter(lambda x: len(x[0]) == max_len, goal.subgoals.items())
-            return min(filtered, key=lambda item: item[0][-1]) # leftmost selection, assuming new subgoals (deeper positions) are added "to the left" of the old ones
+            return min(filtered, key=lambda item: item[0][-1])  # leftmost selection,
+            # assuming new subgoals (deeper positions) are added "to the left" of the old ones
 
         return self.resolution(start, variance_strategy_push, variance_strategy_pop, goal_selection_strategy, max_count)
 

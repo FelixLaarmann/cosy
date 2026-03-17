@@ -108,7 +108,7 @@ class AVL_Bad_Repository:
 
 if __name__ == "__main__":
 
-    repo = AVL_Repository(5, ["A", "B", "C"])
+    repo = AVL_Repository(5, ["A", "B"])
 
     target = Constructor("AVL", Constructor("height", Literal(4)) & Constructor("label", Literal(None)))
     synthesizer = Synthesizer(repo.specification(), {})
@@ -121,7 +121,7 @@ if __name__ == "__main__":
 
     #"""
     start_time = time.time()
-    terms = solution_space.enumerate_trees(target, max_count=10)
+    terms = solution_space.breadth_first_resolution(target, max_count=50)
     end_time = time.time()
 
     print(f"Term-Generator construction for enumeration took {end_time - start_time:.5f} seconds.")
@@ -129,7 +129,7 @@ if __name__ == "__main__":
     start_time = time.time()
     i = 0
     for term in terms:
-        print(term.size)
+        print(term.interpret(repo.pretty_term_algebra()))
         i += 1
     end_time = time.time()
     print(f"Enumeration, interpretation and printing of {i} terms took {end_time - start_time:.2f} seconds.")

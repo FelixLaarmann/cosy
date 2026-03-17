@@ -4,8 +4,8 @@ Overall description of this example goes here.
 """
 
 from src.cosy.core.specification_builder import SpecificationBuilder
-from src.cosy.core.types import Constructor, DataGroup, Literal, Type, Var
-from src.cosy.core.synthesizer import Synthesizer, Specification
+from src.cosy.core.types import Constructor, DataGroup, Literal, Type, Var, Arrow
+from src.cosy.core.synthesizer import Synthesizer, Specification, Group
 from src.cosy.core.solution_space import SolutionSpace, NonTerminalArgument, Goal, ConstantArgument
 from src.cosy.core.tree import Tree
 import time
@@ -33,7 +33,7 @@ def main():
 
 
     start_time = time.time()
-    terms = solution_space.breadth_first_resolution("T0", max_count=100)
+    terms = solution_space.depth_first_resolution("T0", max_count=100)
     end_time = time.time()
 
     #start_time = time.time()
@@ -68,5 +68,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
