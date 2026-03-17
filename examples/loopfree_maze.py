@@ -83,7 +83,7 @@ def component_specifications() -> Mapping[
     }
 
 
-SIZE = 6
+SIZE = 25
 
 def euclidean_distance(pos1: tuple[int, int], pos2: tuple[int, int]) -> float:
     return ((pos1[0] - pos2[0]) ** 2 + (pos1[1] - pos2[1]) ** 2) ** 0.5
@@ -134,12 +134,12 @@ def main():
     print(f"SolutionSpace construction took {end_time - start_time:.5f} seconds.")
     #"""
     start_time = time.time()
-    terms = solution_space.breadth_first_resolution(target, max_count=5)
+    terms = solution_space.enumerate_trees(target, max_count=1)
     end_time = time.time()
     """
     start_time = time.time()
     # greedy best-first search with custom variance strategies and goal selection strategy
-    terms = solution_space.resolution(target, max_count=5,
+    terms = solution_space.resolution(target, max_count=1,
                                       variance_strategy_push=variance_strategy_push,
                                       variance_strategy_pop=variance_strategy_pop,
                                       goal_selection_strategy=goal_selection_strategy)

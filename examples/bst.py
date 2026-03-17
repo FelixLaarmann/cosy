@@ -113,7 +113,7 @@ if __name__ == "__main__":
 
     repo = BST_Repository(5,["A", "B", "C"])
 
-    target = Constructor("BST", Constructor("height", Literal(None)) & Constructor("label", Literal(None)))
+    target = Constructor("BST", Constructor("height", Literal(4)) & Constructor("label", Literal(None)))
     synthesizer = Synthesizer(repo.specification(), {})
 
     start_time = time.time()
@@ -122,9 +122,9 @@ if __name__ == "__main__":
 
     print(f"SolutionSpace construction took {end_time - start_time:.5f} seconds.")
 
-    """
+    #"""
     start_time = time.time()
-    terms = solution_space.enumerate_trees(target, max_count=50)
+    terms = solution_space.breadth_first_resolution(target, max_count=50)
     end_time = time.time()
 
     print(f"Term-Generator construction for enumeration took {end_time - start_time:.5f} seconds.")
@@ -166,7 +166,7 @@ if __name__ == "__main__":
     for nt, rhs in bad_grammar:
         print(f"{nt} -> {rhs.terminal} {[str(arg.value) if isinstance(arg, ConstantArgument) else str(arg.origin) for arg in rhs.arguments]} with {len(rhs.predicates)} predicates:")
 
-
+    """
 
 
 

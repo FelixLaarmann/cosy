@@ -1239,10 +1239,10 @@ if __name__ == "__main__":
         print(term.interpret(repo.pretty_term_algebra()))
         i += 1
     end_time = time.time()
-    print(f"Resolution and printing of {i} terms took {end_time - start_time:.2f} seconds.")
+    print(f"Enumeration and printing of {i} terms took {end_time - start_time:.2f} seconds.")
 
     start_time = time.time()
-    terms = solution_space.breadth_first_resolution(target, max_count=50)
+    terms = solution_space.depth_first_resolution(target, max_count=50)
     end_time = time.time()
 
     print(f"Term-Generator construction for enumeration took {end_time - start_time:.5f} seconds.")
@@ -1253,5 +1253,5 @@ if __name__ == "__main__":
         print(term.interpret(repo.pretty_term_algebra()))
         i += 1
     end_time = time.time()
-    print(f"Enumeration and printing of {i} terms took {end_time - start_time:.2f} seconds.")
+    print(f"Resolution and printing of {i} terms took {end_time - start_time:.2f} seconds.")
 

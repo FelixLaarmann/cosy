@@ -110,7 +110,7 @@ if __name__ == "__main__":
 
     repo = AVL_Repository(5, ["A", "B", "C"])
 
-    target = Constructor("AVL", Constructor("height", Literal(None)) & Constructor("label", Literal(None)))
+    target = Constructor("AVL", Constructor("height", Literal(4)) & Constructor("label", Literal(None)))
     synthesizer = Synthesizer(repo.specification(), {})
 
     start_time = time.time()
@@ -119,9 +119,9 @@ if __name__ == "__main__":
 
     print(f"SolutionSpace construction took {end_time - start_time:.5f} seconds.")
 
-    """
+    #"""
     start_time = time.time()
-    terms = solution_space.enumerate_trees(target, max_count=50)
+    terms = solution_space.enumerate_trees(target, max_count=10)
     end_time = time.time()
 
     print(f"Term-Generator construction for enumeration took {end_time - start_time:.5f} seconds.")
@@ -129,7 +129,7 @@ if __name__ == "__main__":
     start_time = time.time()
     i = 0
     for term in terms:
-        print(term.interpret(repo.pretty_term_algebra()))
+        print(term.size)
         i += 1
     end_time = time.time()
     print(f"Enumeration, interpretation and printing of {i} terms took {end_time - start_time:.2f} seconds.")
@@ -138,7 +138,7 @@ if __name__ == "__main__":
 
     repo_bad = AVL_Bad_Repository(5, ["A", "B", "C"])
 
-    target_bad = Constructor("AVL")
+    target_bad = Constructor("AVL") & Constructor("height", Literal(5))
 
     synthesizer_bad = Synthesizer(repo_bad.specification(), {})
 
@@ -164,3 +164,4 @@ if __name__ == "__main__":
     for nt, rhs in bad_grammar:
         print(
             f"{nt} -> {rhs.terminal} {[str(arg.value) if isinstance(arg, ConstantArgument) else str(arg.origin) for arg in rhs.arguments]} with {len(rhs.predicates)} predicates:")
+    """

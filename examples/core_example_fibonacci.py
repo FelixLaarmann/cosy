@@ -45,7 +45,7 @@ def fib_next(_z: int, _y: int, _x: int, f1: int, f2: int) -> int:
 
 def main():
     # range of relevant indices for Fibonacci numbers
-    bound = 25
+    bound = 15
 
     named_components_with_specifications = [
         (  #
@@ -91,7 +91,7 @@ def main():
     print(f"SolutionSpace construction took {end_time - start_time:.5f} seconds.")
 
     start_time = time.time()
-    terms = solution_space.enumerate_trees(target, max_count=100)
+    terms = solution_space.breadth_first_resolution(target, max_count=100)
     end_time = time.time()
 
     print(f"Term-Generator construction took {end_time - start_time:.5f} seconds.")
