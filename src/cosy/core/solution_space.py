@@ -629,6 +629,52 @@ class SolutionSpace(Generic[NT, T, G]):
 
         return self.resolution(start, variance_strategy_push, variance_strategy_pop, goal_selection_strategy, max_count)
 
+    def sample(self, start: NT, sample_size: int, restriction: int = 10) -> Iterable[Tree[T]]:
+        """Sample terms from the solution space. The sampling strategy is not guaranteed to be uniform or to have any other specific properties."""
+        import random
+
+        def variance_strategy_push(queue: deque[Goal], new_goals: Iterable[Goal]) -> deque[Goal]:
+            queue.extendleft(new_goals)
+            return queue
+
+        def variance_strategy_pop(queue: deque[Goal]) -> tuple[deque[Goal], Goal]:
+            # use random.choices to sample the stack, weighted by the maximum length of its subgoal-paths
+            # enforce depth-first character through restriction...
+            restricted = list(queue) if len(queue) <= restriction else list(queue)[:restriction]  # list(random.sample(queue, restriction))
+            stack = []
+            weights = []
+            cum_weight = 0
+            for goal in restricted:
+                weight = max(len(p) for p in goal.subgoals)
+                cum_weight = cum_weight + weight
+                weights.append(cum_weight)
+                stack.append(goal)
+            selected_goal = random.choices(stack, cum_weights=weights, k=1)[0]
+            queue.remove(selected_goal)
+            return queue, selected_goal
+
+
+
+        def subgoal_selection_strategy(goal: Goal) -> tuple[Path, NonTerminalArgument[NT]]:
+            # completely random is bullshit, only subgoals in leave-positions may be picked randomly...
+            """
+            import random
+            stack = []
+            weights = []
+            for g, nt in goal.subgoals.items():
+                weight = len(g)
+                weights.append(weight)
+                stack.append((g, nt))
+            p = random.choices(stack, weights=weights, k=1)[0]
+            return p
+            """
+            max_len = max(len(p) for p in goal.subgoals)
+            filtered = filter(lambda x: len(x[0]) == max_len, goal.subgoals.items())
+            return min(filtered, key=lambda item: item[0][-1])  # leftmost selection,
+            # assuming new subgoals (deeper positions) are added "to the left" of the old ones
+
+        return self.resolution(start, variance_strategy_push, variance_strategy_pop, subgoal_selection_strategy, sample_size)
+
     def contains_tree(self, start: NT, tree: Tree[T], interpretation: dict[T, Any] | None = None) -> bool:
         """Check if the solution space contains a given `tree` derivable from `start`."""
         if start not in self.nonterminals():

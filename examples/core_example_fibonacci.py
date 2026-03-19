@@ -91,7 +91,7 @@ def main():
     print(f"SolutionSpace construction took {end_time - start_time:.5f} seconds.")
 
     start_time = time.time()
-    terms = solution_space.breadth_first_resolution(target, max_count=100)
+    terms = solution_space.sample(target, 10)
     end_time = time.time()
 
     print(f"Term-Generator construction took {end_time - start_time:.5f} seconds.")

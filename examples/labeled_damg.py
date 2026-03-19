@@ -1228,7 +1228,7 @@ if __name__ == "__main__":
     print(f"SolutionSpace construction took {end_time - start_time:.5f} seconds.")
 
     start_time = time.time()
-    terms = solution_space.breadth_first_resolution(target, max_count=50)
+    terms = solution_space.depth_first_resolution(target, max_count=5)
     end_time = time.time()
 
     print(f"Term-Generator construction for resolution took {end_time - start_time:.5f} seconds.")
@@ -1242,7 +1242,7 @@ if __name__ == "__main__":
     print(f"Enumeration and printing of {i} terms took {end_time - start_time:.2f} seconds.")
 
     start_time = time.time()
-    terms = solution_space.depth_first_resolution(target, max_count=50)
+    terms = solution_space.sample(target, 5, restriction=15)
     end_time = time.time()
 
     print(f"Term-Generator construction for enumeration took {end_time - start_time:.5f} seconds.")
